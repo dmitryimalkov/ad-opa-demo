@@ -1,0 +1,63 @@
+# Организационные юниты для двух "компаний" — аналог OU в реальном AD
+dn: ou=people,dc=demo,dc=local
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=demo,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+# --- Пользователи Company A ---
+dn: uid=alice,ou=people,dc=demo,dc=local
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Analyst
+sn: Analyst
+mail: alice@company-a.demo
+userPassword: Password123!
+
+dn: uid=bob,ou=people,dc=demo,dc=local
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Admin
+sn: Admin
+mail: bob@company-a.demo
+userPassword: Password123!
+
+# --- Пользователи Company B ---
+dn: uid=carol,ou=people,dc=demo,dc=local
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Analyst
+sn: Analyst
+mail: carol@company-b.demo
+userPassword: Password123!
+
+dn: uid=dave,ou=people,dc=demo,dc=local
+objectClass: inetOrgPerson
+uid: dave
+cn: Dave Viewer
+sn: Viewer
+mail: dave@company-b.demo
+userPassword: Password123!
+
+# --- Группы, которые Keycloak замаппит в tenant_id + roles ---
+dn: cn=CompanyA-Analysts,ou=groups,dc=demo,dc=local
+objectClass: groupOfNames
+cn: CompanyA-Analysts
+member: uid=alice,ou=people,dc=demo,dc=local
+
+dn: cn=CompanyA-Admins,ou=groups,dc=demo,dc=local
+objectClass: groupOfNames
+cn: CompanyA-Admins
+member: uid=bob,ou=people,dc=demo,dc=local
+
+dn: cn=CompanyB-Analysts,ou=groups,dc=demo,dc=local
+objectClass: groupOfNames
+cn: CompanyB-Analysts
+member: uid=carol,ou=people,dc=demo,dc=local
+
+dn: cn=CompanyB-Viewers,ou=groups,dc=demo,dc=local
+objectClass: groupOfNames
+cn: CompanyB-Viewers
+member: uid=dave,ou=people,dc=demo,dc=local

@@ -1,0 +1,95 @@
+version: "3.8"
+
+networks:
+  demo-net:
+    driver: bridge
+
+services:
+
+  # --- "AD" для демо: LDAP-сервер, совместимый по протоколу с реальным Active Directory ---
+  ldap:
+    image: osixia/openldap:1.5.0
+    container_name: demo-ldap
+    environment:
+      LDAP_ORGANISATION: "Demo Corp"
+      LDAP_DOMAIN: "demo.local"
+      LDAP_ADMIN_PASSWORD: "AdminPass123!"
+    volumes:
+      - ./ldap-bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    networks:
+      - demo-net
+    ports:
+      - "389:389"
+
+  # UI для просмотра/редактирования LDAP (аналог ADUC для AD)
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: demo-ldap-admin
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: "ldap"
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "8080:80"
+    depends_on:
+      - ldap
+    networks:
+      - demo-net
+
+  # Keycloak — брокер между LDAP/AD и приложениями, выдаёт OIDC/JWT
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: demo-keycloak
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"
+    depends_on:
+      - ldap
+    networks:
+      - demo-net
+
+  # OPA — policy decision point
+  opa:
+    image: openpolicyagent/opa:0.65.0
+    container_name: demo-opa
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    volumes:
+      - ./opa-policies:/policies
+    ports:
+      - "8181:8181"
+    networks:
+      - demo-net
+
+  # PostgreSQL с двумя тенантами и Row-Level Security
+  postgres:
+    image: postgres:16
+    container_name: demo-postgres
+    environment:
+      POSTGRES_DB: salesdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./postgres-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - demo-net
+
+  # Демо-Gateway/API: валидирует JWT, зовёт OPA, ставит tenant_id в сессию Postgres
+  demo-api:
+    build: ./demo-api
+    container_name: demo-api
+    environment:
+      OPA_URL: "http://opa:8181/v1/data/platform/authz"
+      DB_DSN: "postgresql://app_user:app_user_pass@postgres:5432/salesdb"
+      KEYCLOAK_REALM_URL: "http://keycloak:8080/realms/demo"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - opa
+      - postgres
+      - keycloak
+    networks:
+      - demo-net
