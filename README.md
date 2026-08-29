@@ -6,7 +6,91 @@
 
 # Подключение
 chmod 600 ~/Downloads/id_rsa
+
+#### Вход на ВМ
 ssh -i ~/Downloads/id_rsa user1@192.144.13.138
+
+/Users/dmitry/Downloads/ad-opa-demo-4
+#### Запись нового docker-compose
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
+
+#### Запись нового sql
+
+/Users/dmitry/Downloads/ad-opa-demo-4/postgres-init
+
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/postgres-init/00-create-keycloak-db.sql user1@192.144.13.138:/home/user1/ad-opa-demo/postgres-init/00-create-keycloak-db.sql
+
+#### Запись нового main.py
+
+/Users/dmitry/Downloads/ad-opa-demo-5/demo-api
+
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-5/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
+
+#### Настройка Клока
+Откройте http://192.144.13.138:8081, логин admin/admin.
+Create realm → имя demo → Create.
+Сразу: Realm settings → General → Require SSL → None.
+User federation → Add provider → ldap:
+Vendor: Other (сразу, чтобы остальные поля подставились правильно)
+Connection URL: ldap://ldap:389
+Bind DN: cn=admin,dc=demo,dc=local
+Bind Credential: AdminPass123!
+Users DN: ou=people,dc=demo,dc=local
+Username LDAP attribute: uid
+RDN LDAP attribute: uid
+UUID LDAP attribute: entryUUID
+User object classes: inetOrgPerson, organizationalPerson
+Edit mode: READ_ONLY
+Test connection → Test authentication → Save → Synchronize all users.
+Mappers → Add group-ldap-mapper (Name: group-mapper, Mapper Type: group-ldap-mapper):
+LDAP Groups DN: ou=groups,dc=demo,dc=local
+Group Name LDAP Attribute: cn
+Group Object Classes: groupOfNames
+Membership LDAP Attribute: member
+Membership Attribute Type: DN
+Save → Sync LDAP Groups To Keycloak.
+Client demo-gateway (Direct access grants) + custom claim mappers (tenant_id, roles) — как в шагах 3.4–3.5 README.
+
+Раз вы это уже проходили дважды — должно пойти быстро, минут за 5. Если где-то на этих шагах что-то не совпадёт с тем, что видите на экране — присылайте, разберёмся, как и раньше.
+
+
+
+
+
+ssh -i ~/Downloads/id_rsa -L 8081:localhost:8081 user1@192.144.13.138
+
+tail -f /var/log/apt/term.log
+
+scp -i /путь/к/вашему/ключу.pem /путь/к/ad-opa-demo.zip user1@192.144.13.138:~/
+
+scp -i /путь/к/вашему/ключу.pem /путь/к/docker-compose.yml user1@192.144.13.138:~/ad-opa-demo/docker-compose.yml
+
+ls -la /home/user1/ad-opa-demo/ldap-bootstrap/01-tenants.ldif
+cat /home/user1/ad-opa-demo/ldap-bootstrap/01-tenants.ldif
+
+
+
+### Обмануть клок
+
+ssh -L 8081:localhost:8081 user1@192.144.13.138
+
+# 1. Установите зависимости
+sudo apt install -y ca-certificates curl gnupg
+
+# 2. Добавьте ключ Docker
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# 3. Добавьте репозиторий Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# 4. Обновите и установите Docker
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 
 
@@ -37,7 +121,7 @@ AD — меняется только Connection URL в Keycloak (LDAP provider),
 sudo apt update && sudo apt install -y docker.io docker-compose-plugin
 sudo usermod -aG docker $USER
 # перелогиниться, затем:
-git clone <ваш репозиторий с этим проектом> ad-opa-demo
+git clone https://github.com/dmitryimalkov/ad-opa-demo.git ad-opa-demo
 cd ad-opa-demo
 docker compose up -d
 ```
@@ -49,7 +133,7 @@ docker compose ps
 
 ## 3. Настройка Keycloak (один раз, через UI — 10 минут)
 
-Откройте `http://<VM_IP>:8081`, логин `admin`/`admin`.
+Откройте `http://192.144.13.138:8081`, логин `admin`/`admin`.
 
 ### 3.1 Создать realm
 Create realm → имя `demo`.
