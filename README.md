@@ -9,6 +9,96 @@ chmod 600 ~/Downloads/id_rsa
 
 #### Вход на ВМ
 ssh -i ~/Downloads/id_rsa user1@192.144.13.138
+#### KC
+Откройте http://192.144.13.138:8081, логин admin/admin
+
+#### сценарий
+curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!"
+
+TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
+
+echo $TOKEN_ALICE
+### Запросить данные под Алисой
+curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_ALICE" | jq
+
+### Получить токен Кэрол
+TOKEN_CAROL=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=carol" -d "password=Password123!" | jq -r .access_token)
+
+curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_CAROL" | jq
+
+Ожидаем — только строки company_b, тем же самым эндпоинтом.
+
+#### Шаг 6 — главный "вау-момент": попытка подмены tenant_id через query-параметр под Alice:
+curl -s "http://localhost:8000/sales?tenant_id=company_b" -H "Authorization: Bearer $TOKEN_ALICE" | jq
+
+Alice всё равно получит только company_a — обратите внимание на поле note_ignored_query_param в ответе.
+
+#### Шаг 7 — отказ по роли, Dave (viewer, Company B):
+TOKEN_DAVE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=dave" -d "password=Password123!" | jq -r .access_token)
+
+curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_DAVE" | jq
+
+Ожидаем 403 с deny_reason: ["role_not_permitted"]
+
+#### Тестирование всех шагов
+docker exec -it demo-opa opa test /policies -v
+
+Эта команда запускает встроенный **тестовый фреймворк OPA** — тот же принцип, что юнит-тесты в обычном коде, только применительно к Rego-политикам.
+
+## Что происходит по частям
+
+- `docker exec -it demo-opa` — заходим внутрь уже работающего контейнера с OPA и выполняем там команду
+- `opa test /policies -v` — команда самого OPA: "найди все тестовые файлы в папке `/policies` и прогони их против реальных политик оттуда же"
+- `-v` (verbose) — показывает результат по **каждому** тесту отдельно, а не только общую сводку
+
+## Что конкретно будет проверяться
+
+В папке `opa-policies` у вас два файла:
+- `authz.rego` — сама политика (правила `allow`/`deny_reason`)
+- `authz_test.rego` — тесты к ней, которые мы писали в самом начале
+
+Тесты там такие:
+1. `test_analyst_reads_own_tenant_allowed` — аналитик читает данные своей же компании → должно быть `allow = true`
+2. `test_analyst_cannot_read_other_tenant` — аналитик пытается прочитать данные **чужой** компании → должно быть `allow = false`
+3. `test_viewer_cannot_read_sales_data` — viewer пытается читать сырые данные → должно быть `allow = false`
+4. `test_admin_can_write_own_tenant` — admin пишет в свою же компанию → должно быть `allow = true`
+
+## Ожидаемый вывод
+
+Что-то вроде:
+```
+data.platform.authz.test_analyst_reads_own_tenant_allowed: PASS (0.5ms)
+data.platform.authz.test_analyst_cannot_read_other_tenant: PASS (0.3ms)
+data.platform.authz.test_viewer_cannot_read_sales_data: PASS (0.2ms)
+data.platform.authz.test_admin_can_write_own_tenant: PASS (0.3ms)
+--------------------------------------------------------------------------------
+PASS: 4/4
+```
+
+## Почему это стоит показать разработчикам
+
+Это не просто "ещё одна проверка для галочки" — это ответ на вопрос **"а как вы вообще проверяете, что изоляция не сломается при следующем изменении политики?"**. Разработчик может сам изменить `authz.rego` (например, случайно ослабить условие) прямо у вас на глазах — и тест `test_analyst_cannot_read_other_tenant` сразу покажет `FAIL`, наглядно доказывая, что регрессия по безопасности ловится автоматически, а не полагается на то, что кто-то заметит проблему в код-ревью.
+
+### Выход
+
+cd /home/user1/ad-opa-demo
+docker compose stop
+
+Проверка остановки:
+docker compose ps -a
+
+
+## Вход на ldap
+
+
+http://192.144.13.138:8080
+
+На странице логина введите:
+
+Login DN: cn=admin,dc=demo,dc=local
+Password: AdminPass123!
+
+После входа слева будет дерево dc=demo,dc=local — разворачивайте его, там ou=people (пользователи alice/bob/carol/dave) и ou=groups (группы CompanyA-Analysts и т.д.), можно кликать на записи и смотреть их атрибуты.
 
 /Users/dmitry/Downloads/ad-opa-demo-4
 #### Запись нового docker-compose
@@ -274,3 +364,13 @@ docker exec -it demo-opa opa test /policies -v
 по умолчанию игнорирует RLS, и будут видны строки обеих компаний.
 Это хороший повод объяснить, почему в `docker-compose.yml` demo-api
 специально подключается под ограниченным `app_user`, а не под `postgres`.
+
+# Важно!
+Да, верно — с тех пор как мы переключили Keycloak с start-dev/H2 на production-режим, всё его собственное состояние (realm demo, настройки client demo-gateway, mappers, LDAP-провайдер) хранится в отдельной базе keycloak внутри того же контейнера demo-postgres, где лежит и sales.
+
+Небольшое уточнение — что именно там хранится
+
+Важно различать два вида данных:
+
+В Postgres (keycloak DB) — хранится конфигурация самого Keycloak: описание realm, client'ы, mappers, настройки LDAP-провайдера (то, что вы руками заводили через UI). Это "как Keycloak работает".
+В LDAP — по-прежнему хранятся сами пользователи и группы (alice, bob, CompanyA-Analysts и т.д.). Keycloak их не копирует к себе как "источник правды" — LDAP остаётся главным хранилищем, а Keycloak лишь кэширует/зеркалирует то, что оттуда прочитал (отсюда и Edit mode: READ_ONLY, о котором говорили в прошлом сообщении).
