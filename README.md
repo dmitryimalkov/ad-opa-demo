@@ -136,9 +136,9 @@ scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/postgres-init/02
 
 #### Запись нового main.py
 
-/Users/dmitry/Downloads/ad-opa-demo-7/demo-api
+/Users/dmitry/Downloads/ad-opa-demo-8/demo-api
 
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-7/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-8/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
 
 #### Запись новых политик
 
