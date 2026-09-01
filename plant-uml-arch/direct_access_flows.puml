@@ -1,3 +1,4 @@
+```plantuml
 @startuml direct_db_access_flow
 title Customer Journey: прямой доступ к БД через DBeaver (без прохождения через Gateway/OPA)
 
@@ -123,3 +124,4 @@ note over GW, S3
 end note
 
 @enduml
+```
