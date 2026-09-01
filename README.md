@@ -103,6 +103,9 @@ Password: AdminPass123!
 После входа слева будет дерево dc=demo,dc=local — разворачивайте его, там ou=people (пользователи alice/bob/carol/dave) и ou=groups (группы CompanyA-Analysts и т.д.), можно кликать на записи и смотреть их атрибуты.
 
 /Users/dmitry/Downloads/ad-opa-demo-4
+
+## <span style="color:red">Записи на ВМ</span>
+
 #### Запись нового docker-compose
 scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
 
