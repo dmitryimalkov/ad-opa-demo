@@ -105,26 +105,28 @@ Password: AdminPass123!
 /Users/dmitry/Downloads/ad-opa-demo-4
 
 ## $\color{red}{\text{Записи на ВМ}}$
+### $\color{blue}{\text{Версия 6: ad-opa-demo-6}}$
 скопируйте на VM обновлённые файлы (main.py, docker-compose.yml, authz.rego, authz_test.rego, 02-tenant-roles.sql)
 
 #### Запись нового docker-compose
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
 
 #### Запись нового sql
 
-/Users/dmitry/Downloads/ad-opa-demo-4/postgres-init
+/Users/dmitry/Downloads/ad-opa-demo-6/postgres-init
 
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/postgres-init/00-create-keycloak-db.sql user1@192.144.13.138:/home/user1/ad-opa-demo/postgres-init/00-create-keycloak-db.sql
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/postgres-init/02-tenant-roles.sql user1@192.144.13.138:/home/user1/ad-opa-demo/postgres-init/02-tenant-roles.sql
 
 #### Запись нового main.py
 
-/Users/dmitry/Downloads/ad-opa-demo-5/demo-api
+/Users/dmitry/Downloads/ad-opa-demo-6/demo-api
 
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-5/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
 
 #### Запись новых политик
 
 /Users/dmitry/Downloads/ad-opa-demo-6/opa-policies
+
 scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/opa-policies/authz.rego user1@192.144.13.138:/home/user1/ad-opa-demo/opa-policies/authz.rego
 
 scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/opa-policies/authz_test.rego user1@192.144.13.138:/home/user1/ad-opa-demo/opa-policies/authz_test.rego
