@@ -104,7 +104,7 @@ Password: AdminPass123!
 
 /Users/dmitry/Downloads/ad-opa-demo-4
 
-## <span style="color:red">Записи на ВМ</span>
+## $\color{red}{\text{Записи на ВМ}}$
 
 #### Запись нового docker-compose
 scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
