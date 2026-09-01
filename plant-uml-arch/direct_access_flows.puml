@@ -1,0 +1,125 @@
+@startuml direct_db_access_flow
+title Customer Journey: прямой доступ к БД через DBeaver (без прохождения через Gateway/OPA)
+
+actor "Аналитик Company A" as User
+participant "DBeaver\n(родной SQL-клиент)" as DBeaver
+participant "AD / LDAP" as AD
+database "PostgreSQL" as PG
+database "ClickHouse" as CH
+participant "Provisioning job\n(разовая/периодическая синхронизация)" as Sync
+participant "OPA" as OPA
+
+== Этап 0: Провижининг доступа (офлайн, не на каждый запрос) ==
+
+note over Sync, OPA
+  Это происходит РЕДКО (например, раз в сутки или по событию
+  "пользователя добавили в AD-группу"), а не на каждый SQL-запрос.
+  OPA здесь ОСТАЁТСЯ источником политики — просто решение
+  принимается один раз при выдаче прав, а не на лету.
+end note
+
+Sync -> AD: Считывает AD-группы пользователей
+Sync -> OPA: input={user.group, action:"grant_direct_db_access"}
+OPA -> Sync: allow/deny (кому вообще положен прямой доступ к БД)
+
+alt allow
+    Sync -> PG: Создаёт/обновляет ROLE tenant_company_a_readonly,\nвключает пользователя в неё (GRANT)
+    note right of PG
+      Postgres LDAP auth (pg_hba.conf: ldap) сам по себе
+      только ПРОВЕРЯЕТ пароль через AD bind — он не умеет
+      динамически назначать роль по AD-группе, поэтому
+      членство в ROLE нужно поддерживать этим job'ом.
+    end note
+
+    Sync -> CH: Настраивает LDAP role mapping\n(группа AD -> роль ClickHouse) — один раз
+    note right of CH
+      ClickHouse умеет это НАТИВНО и динамически:
+      при каждом логине сам смотрит группу в LDAP
+      и назначает роль на лету — Sync здесь нужен
+      только для первоначальной настройки конфига,
+      не для каждого пользователя отдельно.
+    end note
+end
+
+== Этап 1: Подключение пользователя (уже без OPA в реальном времени) ==
+
+User -> DBeaver: Указывает host=postgres.internal,\nлогин/пароль — свои AD-креды
+DBeaver -> PG: Подключение (LDAP simple bind auth)
+PG -> AD: Проверяет пароль (LDAP bind)
+AD -> PG: Успех
+PG -> DBeaver: Сессия установлена КАК ROLE tenant_company_a_readonly
+
+User -> DBeaver: SELECT * FROM sales
+DBeaver -> PG: Выполняет запрос
+PG -> PG: Row Policy, привязанная\nИМЕННО К ЭТОЙ РОЛИ:\nCREATE POLICY ... TO tenant_company_a_readonly\nUSING (tenant_id = 'company_a')
+PG -> DBeaver: Только строки company_a —\nдаже без WHERE в запросе пользователя
+
+note over PG
+  Ключевое отличие от нашего Gateway-сценария:
+  здесь НЕТ app.tenant_id, который выставляет наш код.
+  Изоляция держится на том, ЧЕРЕЗ КАКУЮ РОЛЬ
+  установлено соединение — а роль жёстко привязана
+  к tenant ещё на этапе провижининга (Этап 0).
+end note
+
+== Аналогично для ClickHouse (динамически, без Sync на каждого юзера) ==
+
+User -> DBeaver: Подключение к ClickHouse,\nAD логин/пароль
+DBeaver -> CH: Запрос на подключение
+CH -> AD: LDAP bind (проверка пароля)
+CH -> AD: Запрос группы пользователя
+CH -> CH: Role mapping: группа AD -> роль CH,\nроль привязана к Row Policy
+CH -> DBeaver: Сессия установлена,\nRow Policy уже активна
+User -> DBeaver: SELECT * FROM sales_ch
+CH -> DBeaver: Только строки своего tenant
+
+@enduml
+
+@startuml self_service_s3_upload_flow
+title Customer Journey: самостоятельная загрузка датасета в S3 (OPA остаётся в пути)
+
+actor "Пользователь Company A" as User
+participant "Локальный инструмент\n(aws-cli / rclone / DBeaver S3-плагин)" as Client
+participant "API Gateway\n(новый эндпоинт /s3-credentials)" as GW
+participant "Keycloak" as KC
+participant "OPA" as OPA
+participant "STS (Security Token Service)" as STS
+participant "S3" as S3
+
+User -> Client: Хочет загрузить датасет
+Client -> GW: POST /s3-credentials\n+ Bearer JWT (обычный логин, как раньше)
+
+GW -> GW: Валидация JWT (подпись, срок,\nизвлечение tenant_id/roles)
+GW -> OPA: input={user, action:"s3_upload",\nresource:{type:"s3_bucket", tenant_id}}
+OPA -> GW: allow / deny_reason
+
+alt deny
+    GW -> Client: 403 + причина
+else allow
+    GW -> STS: AssumeRole,\npolicy шаблонизирована под tenant_id:\nResource: arn:aws:s3:::bucket/company_a/*
+    STS -> GW: Временные credentials\n(AccessKey, SecretKey, SessionToken, TTL=1ч)
+    GW -> Client: Отдаёт временные credentials
+
+    note over Client, S3
+      Дальше Gateway/OPA УЖЕ НЕ УЧАСТВУЮТ.
+      Сама передача данных (может быть гигабайты)
+      идёт напрямую в S3, минуя наш сервис —
+      это специально, чтобы не гонять большой
+      трафик через Gateway как через "бутылочное горлышко".
+    end note
+
+    Client -> S3: PUT object,\nиспользуя временные credentials
+    S3 -> S3: Проверка IAM-политики credentials —\nphysически ограничена префиксом company_a/*
+    S3 -> Client: Успех (или Access Denied,\nесли путь вне company_a/*, ЧТО БЫ Client ни пытался)
+end
+
+note over GW, S3
+  OPA здесь встроен ровно в тот момент, который решает
+  ИСХОД всего остального: без allow от OPA временные
+  credentials просто не выдаются. Дальше IAM-политика
+  внутри самих credentials — это второй, независимый
+  барьер (defense in depth), тот же принцип, что и RLS
+  в связке с Gateway-сценарием.
+end note
+
+@enduml
