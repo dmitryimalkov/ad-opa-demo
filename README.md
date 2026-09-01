@@ -122,7 +122,7 @@ Password: AdminPass123!
 /Users/dmitry/Downloads/ad-opa-demo-4
 
 ## $\color{red}{\text{Записи на ВМ}}$
-### $\color{blue}{\text{Версия 7: ad-opa-demo-7}}$
+### $\color{blue}{\text{Версия 8: ad-opa-demo-8}}$
 скопируйте на VM обновлённые файлы (main.py, docker-compose.yml, authz.rego, authz_test.rego, 02-tenant-roles.sql)
 
 #### Запись нового docker-compose
