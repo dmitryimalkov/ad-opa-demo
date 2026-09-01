@@ -75,7 +75,8 @@ User -> DBeaver: SELECT * FROM sales_ch
 CH -> DBeaver: Только строки своего tenant
 
 @enduml
-
+```
+```plantuml
 @startuml self_service_s3_upload_flow
 title Customer Journey: самостоятельная загрузка датасета в S3 (OPA остаётся в пути)
 
