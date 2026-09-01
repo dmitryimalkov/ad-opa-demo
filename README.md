@@ -122,7 +122,7 @@ Password: AdminPass123!
 /Users/dmitry/Downloads/ad-opa-demo-4
 
 ## $\color{red}{\text{Записи на ВМ}}$
-### $\color{blue}{\text{Версия 6: ad-opa-demo-6}}$
+### $\color{blue}{\text{Версия 7: ad-opa-demo-7}}$
 скопируйте на VM обновлённые файлы (main.py, docker-compose.yml, authz.rego, authz_test.rego, 02-tenant-roles.sql)
 
 #### Запись нового docker-compose
@@ -136,9 +136,9 @@ scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/postgres-init/02
 
 #### Запись нового main.py
 
-/Users/dmitry/Downloads/ad-opa-demo-6/demo-api
+/Users/dmitry/Downloads/ad-opa-demo-7/demo-api
 
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-6/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
+scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-7/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
 
 #### Запись новых политик
 
