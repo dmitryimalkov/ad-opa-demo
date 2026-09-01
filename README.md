@@ -42,6 +42,23 @@ curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_DAVE" | jq
 
 Ожидаем 403 с deny_reason: ["role_not_permitted"]
 
+#### Шаг 8
+
+Команда
+
+TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
+
+curl -s -X POST http://localhost:8000/db-credentials -H "Authorization: Bearer $TOKEN_ALICE" | jq
+
+{
+  "warning": "Сохраните пароль сейчас — повторно он показан не будет. Каждый вызов этого эндпоинта выдаёт НОВЫЙ пароль, старый перестаёт действовать.",
+  "host": "192.144.13.138",
+  "port": 5432,
+  "database": "salesdb",
+  "username": "alice_company_a",
+  "password": "z_A67oDQ82_m4F0-W0dohA"
+}
+
 #### Тестирование всех шагов
 docker exec -it demo-opa opa test /policies -v
 
