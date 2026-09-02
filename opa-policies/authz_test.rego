@@ -31,3 +31,27 @@ test_admin_can_write_own_tenant {
         "resource": {"type": "sales_data", "tenant_id": "company_a"}
     }
 }
+
+test_analyst_can_get_db_credentials {
+    allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "grant_direct_db_access",
+        "resource": {"type": "database", "tenant_id": "company_a"}
+    }
+}
+
+test_viewer_cannot_get_db_credentials {
+    not allow with input as {
+        "user": {"tenant_id": "company_b", "roles": ["viewer"]},
+        "action": "grant_direct_db_access",
+        "resource": {"type": "database", "tenant_id": "company_b"}
+    }
+}
+
+test_cannot_get_db_credentials_for_other_tenant {
+    not allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["admin"]},
+        "action": "grant_direct_db_access",
+        "resource": {"type": "database", "tenant_id": "company_b"}
+    }
+}

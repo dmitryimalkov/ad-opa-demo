@@ -4,6 +4,9 @@ networks:
   demo-net:
     driver: bridge
 
+volumes:
+  pgdata:
+
 services:
 
   # --- "AD" для демо: LDAP-сервер, совместимый по протоколу с реальным Active Directory ---
@@ -14,12 +17,37 @@ services:
       LDAP_ORGANISATION: "Demo Corp"
       LDAP_DOMAIN: "demo.local"
       LDAP_ADMIN_PASSWORD: "AdminPass123!"
-    volumes:
-      - ./ldap-bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
     networks:
       - demo-net
     ports:
       - "389:389"
+
+  # Одноразовый загрузчик тестовых данных: встроенный bootstrap-механизм
+  # образа osixia/openldap ломается при любом bind-mount на путь
+  # .../bootstrap/ldif/custom (известный баг образа, "Device or resource busy"
+  # при попытке cleanup смонтированного пути). Поэтому грузим LDIF
+  # штатной командой ldapadd уже ПОСЛЕ старта сервера — тем же образом,
+  # у которого есть нужные LDAP-утилиты.
+  ldap-init:
+    image: osixia/openldap:1.5.0
+    container_name: demo-ldap-init
+    depends_on:
+      - ldap
+    volumes:
+      - ./ldap-bootstrap:/ldif:ro
+    networks:
+      - demo-net
+    entrypoint: >
+      sh -c '
+      echo "[ldap-init] Ждём, пока LDAP начнёт принимать соединения...";
+      until ldapsearch -x -H ldap://ldap:389 -b "" -s base > /dev/null 2>&1; do
+        sleep 2;
+      done;
+      echo "[ldap-init] LDAP доступен, загружаем bootstrap LDIF...";
+      ldapadd -c -x -D "cn=admin,dc=demo,dc=local" -w AdminPass123! -H ldap://ldap:389 -f /ldif/01-tenants.ldif;
+      echo "[ldap-init] Готово (ошибки about already exists при повторном запуске — нормальны и безопасны)";
+      '
+    restart: "no"
 
   # UI для просмотра/редактирования LDAP (аналог ADUC для AD)
   phpldapadmin:
@@ -35,20 +63,54 @@ services:
     networks:
       - demo-net
 
-  # Keycloak — брокер между LDAP/AD и приложениями, выдаёт OIDC/JWT
+  # Keycloak — брокер между LDAP/AD и приложениями, выдаёт OIDC/JWT.
+  # Работает в production-режиме (start, не start-dev) с состоянием в Postgres —
+  # раньше start-dev хранил всё в файловой H2-базе внутри контейнера,
+  # и любое пересоздание контейнера (например, при перезапуске VM) сбрасывало
+  # realm/клиентов/mappers "с нуля". Теперь конфигурация переживает пересоздание,
+  # т.к. лежит в volume pgdata через отдельную БД keycloak в том же Postgres.
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: quay.io/keycloak/keycloak:25.0.6
     container_name: demo-keycloak
-    command: start-dev
+    command: start --http-enabled=true --hostname-strict=false
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_pass
     ports:
       - "8081:8080"
     depends_on:
-      - ldap
+      ldap:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     networks:
       - demo-net
+
+  # Одноразовый служебный контейнер: сразу после старта Keycloak
+  # заходит В НЕГО ЖЕ через общий сетевой namespace (network_mode: service:keycloak),
+  # поэтому для Keycloak это выглядит как localhost-запрос — та же причина,
+  # по которой раньше срабатывал "docker exec ... --server http://localhost:8080".
+  # Это убирает требование HTTPS для master-realm БЕЗ SSH-туннеля и БЕЗ ручных команд.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:25.0.6
+    container_name: demo-keycloak-init
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    entrypoint: >
+      sh -c '
+      echo "[init] Ждём готовности Keycloak...";
+      until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin; do
+        sleep 5;
+      done;
+      /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE;
+      echo "[init] Готово: master realm sslRequired=NONE — админка доступна по http:// без туннеля";
+      '
+    restart: "no"
 
   # OPA — policy decision point
   opa:
@@ -72,6 +134,12 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - ./postgres-init:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
       - "5432:5432"
     networks:
@@ -84,6 +152,7 @@ services:
     environment:
       OPA_URL: "http://opa:8181/v1/data/platform/authz"
       DB_DSN: "postgresql://app_user:app_user_pass@postgres:5432/salesdb"
+      ADMIN_DB_DSN: "postgresql://postgres:postgres@postgres:5432/salesdb"
       KEYCLOAK_REALM_URL: "http://keycloak:8080/realms/demo"
     ports:
       - "8000:8000"
