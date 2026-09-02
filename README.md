@@ -2,189 +2,7 @@
 
 Цель: на одной VM в cloud.ru поднять полный контур из наших диаграмм и
 живьём показать, что Company A и Company B работают на одном стенде,
-но физически не могут увидеть данные друг друга!!
-
-# Подключение
-chmod 600 ~/Downloads/id_rsa
-
-#### Вход на ВМ
-ssh -i ~/Downloads/id_rsa user1@192.144.13.138
-#### KC
-Откройте http://192.144.13.138:8081, логин admin/admin
-
-#### Сценарий
-##### Получаем токены
-
-curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!"
-
-TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
-
-echo $TOKEN_ALICE
-### Запросить данные под Алисой
-curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_ALICE" | jq
-
-### Получить токен Кэрол
-TOKEN_CAROL=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=carol" -d "password=Password123!" | jq -r .access_token)
-
-curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_CAROL" | jq
-
-Ожидаем — только строки company_b, тем же самым эндпоинтом.
-
-#### Шаг 6 — главный "вау-момент": попытка подмены tenant_id через query-параметр под Alice:
-curl -s "http://localhost:8000/sales?tenant_id=company_b" -H "Authorization: Bearer $TOKEN_ALICE" | jq
-
-Alice всё равно получит только company_a — обратите внимание на поле note_ignored_query_param в ответе.
-
-#### Шаг 7 — отказ по роли, Dave (viewer, Company B):
-TOKEN_DAVE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=dave" -d "password=Password123!" | jq -r .access_token)
-
-curl -s http://localhost:8000/sales -H "Authorization: Bearer $TOKEN_DAVE" | jq
-
-Ожидаем 403 с deny_reason: ["role_not_permitted"]
-
-#### Тестирование всех шагов
-docker exec -it demo-opa opa test /policies -v
-
-Эта команда запускает встроенный **тестовый фреймворк OPA** — тот же принцип, что юнит-тесты в обычном коде, только применительно к Rego-политикам.
-
-## Что происходит по частям
-
-- `docker exec -it demo-opa` — заходим внутрь уже работающего контейнера с OPA и выполняем там команду
-- `opa test /policies -v` — команда самого OPA: "найди все тестовые файлы в папке `/policies` и прогони их против реальных политик оттуда же"
-- `-v` (verbose) — показывает результат по **каждому** тесту отдельно, а не только общую сводку
-
-## Что конкретно будет проверяться
-
-В папке `opa-policies` у вас два файла:
-- `authz.rego` — сама политика (правила `allow`/`deny_reason`)
-- `authz_test.rego` — тесты к ней, которые мы писали в самом начале
-
-Тесты там такие:
-1. `test_analyst_reads_own_tenant_allowed` — аналитик читает данные своей же компании → должно быть `allow = true`
-2. `test_analyst_cannot_read_other_tenant` — аналитик пытается прочитать данные **чужой** компании → должно быть `allow = false`
-3. `test_viewer_cannot_read_sales_data` — viewer пытается читать сырые данные → должно быть `allow = false`
-4. `test_admin_can_write_own_tenant` — admin пишет в свою же компанию → должно быть `allow = true`
-
-## Ожидаемый вывод
-
-Что-то вроде:
-```
-data.platform.authz.test_analyst_reads_own_tenant_allowed: PASS (0.5ms)
-data.platform.authz.test_analyst_cannot_read_other_tenant: PASS (0.3ms)
-data.platform.authz.test_viewer_cannot_read_sales_data: PASS (0.2ms)
-data.platform.authz.test_admin_can_write_own_tenant: PASS (0.3ms)
---------------------------------------------------------------------------------
-PASS: 4/4
-```
-
-## Почему это стоит показать разработчикам
-
-Это не просто "ещё одна проверка для галочки" — это ответ на вопрос **"а как вы вообще проверяете, что изоляция не сломается при следующем изменении политики?"**. Разработчик может сам изменить `authz.rego` (например, случайно ослабить условие) прямо у вас на глазах — и тест `test_analyst_cannot_read_other_tenant` сразу покажет `FAIL`, наглядно доказывая, что регрессия по безопасности ловится автоматически, а не полагается на то, что кто-то заметит проблему в код-ревью.
-
-### Выход
-
-cd /home/user1/ad-opa-demo
-docker compose stop
-
-Проверка остановки:
-docker compose ps -a
-
-
-## Вход на ldap
-
-
-http://192.144.13.138:8080
-
-На странице логина введите:
-
-Login DN: cn=admin,dc=demo,dc=local
-Password: AdminPass123!
-
-После входа слева будет дерево dc=demo,dc=local — разворачивайте его, там ou=people (пользователи alice/bob/carol/dave) и ou=groups (группы CompanyA-Analysts и т.д.), можно кликать на записи и смотреть их атрибуты.
-
-/Users/dmitry/Downloads/ad-opa-demo-4
-#### Запись нового docker-compose
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/docker-compose.yml user1@192.144.13.138:/home/user1/ad-opa-demo/docker-compose.yml
-
-#### Запись нового sql
-
-/Users/dmitry/Downloads/ad-opa-demo-4/postgres-init
-
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-4/postgres-init/00-create-keycloak-db.sql user1@192.144.13.138:/home/user1/ad-opa-demo/postgres-init/00-create-keycloak-db.sql
-
-#### Запись нового main.py
-
-/Users/dmitry/Downloads/ad-opa-demo-5/demo-api
-
-scp -i ~/Downloads/id_rsa /Users/dmitry/Downloads/ad-opa-demo-5/demo-api/main.py user1@192.144.13.138:/home/user1/ad-opa-demo/demo-api/main.py
-
-#### Настройка Клока
-Откройте http://192.144.13.138:8081, логин admin/admin.
-Create realm → имя demo → Create.
-Сразу: Realm settings → General → Require SSL → None.
-User federation → Add provider → ldap:
-Vendor: Other (сразу, чтобы остальные поля подставились правильно)
-Connection URL: ldap://ldap:389
-Bind DN: cn=admin,dc=demo,dc=local
-Bind Credential: AdminPass123!
-Users DN: ou=people,dc=demo,dc=local
-Username LDAP attribute: uid
-RDN LDAP attribute: uid
-UUID LDAP attribute: entryUUID
-User object classes: inetOrgPerson, organizationalPerson
-Edit mode: READ_ONLY
-Test connection → Test authentication → Save → Synchronize all users.
-Mappers → Add group-ldap-mapper (Name: group-mapper, Mapper Type: group-ldap-mapper):
-LDAP Groups DN: ou=groups,dc=demo,dc=local
-Group Name LDAP Attribute: cn
-Group Object Classes: groupOfNames
-Membership LDAP Attribute: member
-Membership Attribute Type: DN
-Save → Sync LDAP Groups To Keycloak.
-Client demo-gateway (Direct access grants) + custom claim mappers (tenant_id, roles) — как в шагах 3.4–3.5 README.
-
-Раз вы это уже проходили дважды — должно пойти быстро, минут за 5. Если где-то на этих шагах что-то не совпадёт с тем, что видите на экране — присылайте, разберёмся, как и раньше.
-
-
-
-
-
-ssh -i ~/Downloads/id_rsa -L 8081:localhost:8081 user1@192.144.13.138
-
-tail -f /var/log/apt/term.log
-
-scp -i /путь/к/вашему/ключу.pem /путь/к/ad-opa-demo.zip user1@192.144.13.138:~/
-
-scp -i /путь/к/вашему/ключу.pem /путь/к/docker-compose.yml user1@192.144.13.138:~/ad-opa-demo/docker-compose.yml
-
-ls -la /home/user1/ad-opa-demo/ldap-bootstrap/01-tenants.ldif
-cat /home/user1/ad-opa-demo/ldap-bootstrap/01-tenants.ldif
-
-
-
-### Обмануть клок
-
-ssh -L 8081:localhost:8081 user1@192.144.13.138
-
-# 1. Установите зависимости
-sudo apt install -y ca-certificates curl gnupg
-
-# 2. Добавьте ключ Docker
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-# 3. Добавьте репозиторий Docker
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# 4. Обновите и установите Docker
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-
+но физически не могут увидеть данные друг друга.
 
 ## Почему OpenLDAP, а не настоящий AD
 
@@ -203,8 +21,24 @@ AD — меняется только Connection URL в Keycloak (LDAP provider),
 
 ## 1. Что поднять в cloud.ru
 
+Минимально достаточно **одной VM** (Evolution Compute):
 
+- Рекомендуемая конфигурация: 2 vCPU / 4-8 GB RAM, Ubuntu 22.04/24.04
+- Диск: 20-30 GB (система) — этого хватит для Docker-образов демо-стенда
+- Сеть: одна VPC, один публичный IP (или доступ через VPN/bastion, если
+  политика безопасности компании требует)
+- Группа безопасности (Security Group): открыть входящие порты только
+  с вашего IP/офисной сети, не на 0.0.0.0/0:
+  - `8081` — Keycloak admin console
+  - `8080` — phpldapadmin (просмотр LDAP-структуры)
+  - `8000` — demo-api (Gateway)
+  - `8181` — OPA (для отладки политик, можно закрыть после демо)
+  - `22` — SSH
 
+Managed PostgreSQL и Managed Kubernetes от cloud.ru **не обязательны**
+для демо — контейнеризованный Postgres в docker-compose полностью
+достаточен, чтобы показать RLS. Managed-сервисы имеет смысл использовать,
+когда стенд перерастёт в pre-prod окружение.
 
 ## 2. Установка на VM
 
@@ -213,7 +47,7 @@ AD — меняется только Connection URL в Keycloak (LDAP provider),
 sudo apt update && sudo apt install -y docker.io docker-compose-plugin
 sudo usermod -aG docker $USER
 # перелогиниться, затем:
-git clone https://github.com/dmitryimalkov/ad-opa-demo.git ad-opa-demo
+git clone <ваш репозиторий с этим проектом> ad-opa-demo
 cd ad-opa-demo
 docker compose up -d
 ```
@@ -225,7 +59,24 @@ docker compose ps
 
 ## 3. Настройка Keycloak (один раз, через UI — 10 минут)
 
-Откройте `http://192.144.13.138:8081`, логин `admin`/`admin`.
+Откройте `http://<VM_IP>:8081`, логин `admin`/`admin`.
+
+> **Про ошибку "HTTPS required":** в docker-compose уже есть служебный
+> контейнер `keycloak-init`, который при первом старте стека сам заходит
+> в Keycloak через общий сетевой namespace (`network_mode: service:keycloak`)
+> и отключает требование HTTPS для realm `master` — именно поэтому
+> `http://<VM_IP>:8081/admin` должен открываться сразу, без SSH-туннеля.
+> Проверить, что он отработал: `docker logs demo-keycloak-init` — там
+> должна быть строка `[init] Готово: master realm sslRequired=NONE`.
+>
+> Это исправляет доступ к **админке** (она всегда работает через realm
+> `master`). Но когда вы создадите ниже realm `demo` — на него это
+> автоматическое отключение не распространяется (realm `demo` ещё не
+> существовал в момент старта контейнеров). Поэтому после шага 3.1
+> сразу зайдите в **Realm settings** realm'а `demo` → General → **Require
+> SSL** → выставьте **None** вручную — иначе запросы к
+> `/realms/demo/protocol/openid-connect/token` (получение токенов
+> Alice/Carol и т.д.) будут падать с той же ошибкой.
 
 ### 3.1 Создать realm
 Create realm → имя `demo`.
@@ -358,21 +209,77 @@ docker exec -it demo-opa opa test /policies -v
   на реальный AD-контроллер, плюс маппинг реальных AD-групп/атрибутов
   вместо `businessCategory`/`cn` из нашего LDIF.
 
-## 6. Быстрая проверка "что если RLS отключить" (опционально, для эффекта)
+## 7. Прямой доступ к БД (DBeaver) через self-service credentials
+
+Это отдельный сценарий, не похожий на остальной demo-api — не про
+Gateway, проксирующий запрос, а про выдачу пользователю СОБСТВЕННЫХ
+credentials к Postgres, которыми он дальше сам подключается любым
+клиентом (DBeaver, psql, что угодно), полностью МИМО Gateway и OPA.
+
+### Почему это отдельный путь
+
+DBeaver говорит с Postgres по бинарному протоколу, а не по HTTP —
+там негде вызвать OPA на каждый SQL-запрос. Поэтому OPA здесь
+проверяется один раз — в момент, когда пользователь просит выдать
+ему credentials, а не на каждый последующий SELECT. Дальше изоляцию
+держит не Gateway, а Row Policy, привязанная к самой роли подключения
+(`postgres-init/02-tenant-roles.sql`).
+
+### Как получить credentials
+
+```bash
+TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
+
+curl -s -X POST http://localhost:8000/db-credentials -H "Authorization: Bearer $TOKEN_ALICE" | jq
+```
+
+Ожидаемый ответ:
+```json
+{
+  "warning": "Сохраните пароль сейчас — повторно он показан не будет...",
+  "host": "192.144.13.138",
+  "port": 5432,
+  "database": "salesdb",
+  "username": "alice_company_a",
+  "password": "<сгенерированный, каждый раз новый>"
+}
+```
+
+### Проверка в DBeaver
+
+Создайте новое подключение PostgreSQL с этими `host`/`port`/`database`/
+`username`/`password` — обычный пароль, никакого OIDC/LDAP в самом
+DBeaver настраивать не нужно. Выполните `SELECT * FROM sales` —
+должны увидеть только строки `company_a` (или `company_b`, если
+получали credentials под Carol), причём **автоматически**, без
+единого `WHERE` в запросе.
+
+### Проверка отказа (Dave, viewer)
+
+```bash
+TOKEN_DAVE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=dave" -d "password=Password123!" | jq -r .access_token)
+
+curl -s -X POST http://localhost:8000/db-credentials -H "Authorization: Bearer $TOKEN_DAVE" | jq
+```
+Ожидаем `403` с `deny_reason: ["role_not_permitted"]` — Dave как viewer
+не имеет права на `grant_direct_db_access` по нашей OPA-матрице,
+поэтому даже роль в Postgres для него никогда не создастся.
+
+### Что почеркнуть разработчикам
+
+Каждый вызов `/db-credentials` **перевыпускает** пароль (`ALTER ROLE`) —
+предыдущий сразу перестаёт действовать. Это сознательный выбор:
+проще выдавать заново по требованию, чем хранить где-то склад
+активных паролей, который сам по себе стал бы точкой утечки.
+
+## 8. Быстрая проверка "что если RLS отключить" (опционально, для эффекта)
 
 Чтобы наглядно показать разработчикам ЦЕННОСТЬ RLS — можно временно
 подключиться под суперпользователем `postgres` (не `app_user`) и
 выполнить `SELECT * FROM sales` без `SET app.tenant_id` — суперпользователь
 по умолчанию игнорирует RLS, и будут видны строки обеих компаний.
 Это хороший повод объяснить, почему в `docker-compose.yml` demo-api
-специально подключается под ограниченным `app_user`, а не под `postgres`.
-
-# Важно!
-Да, верно — с тех пор как мы переключили Keycloak с start-dev/H2 на production-режим, всё его собственное состояние (realm demo, настройки client demo-gateway, mappers, LDAP-провайдер) хранится в отдельной базе keycloak внутри того же контейнера demo-postgres, где лежит и sales.
-
-Небольшое уточнение — что именно там хранится
-
-Важно различать два вида данных:
-
-В Postgres (keycloak DB) — хранится конфигурация самого Keycloak: описание realm, client'ы, mappers, настройки LDAP-провайдера (то, что вы руками заводили через UI). Это "как Keycloak работает".
-В LDAP — по-прежнему хранятся сами пользователи и группы (alice, bob, CompanyA-Analysts и т.д.). Keycloak их не копирует к себе как "источник правды" — LDAP остаётся главным хранилищем, а Keycloak лишь кэширует/зеркалирует то, что оттуда прочитал (отсюда и Edit mode: READ_ONLY, о котором говорили в прошлом сообщении).
+специально подключается под ограниченным `app_user`, а не под `postgres`
+для обычных запросов — и почему `ADMIN_DB_DSN` (суперпользователь,
+нужен только для `/db-credentials`) — отдельная, более чувствительная
+переменная, которую стоит беречь строже, чем `DB_DSN`.
