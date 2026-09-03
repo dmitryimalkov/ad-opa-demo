@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | **PostgreSQL** | Через Gateway (BI/LLM/API) | На каждый HTTP-запрос | `SET app.tenant_id` + RLS-политика на переменную | ✅ Реализовано |
 | **PostgreSQL** | Напрямую (DBeaver) | Один раз — при выдаче credentials (`/db-credentials`) | RLS-политика, привязанная `TO` роли подключения; `VALID UNTIL` для TTL | ✅ Реализовано |
-| **ClickHouse** | Через Gateway (BI/LLM/API) | На каждый HTTP-запрос — тот же паттерн, что и Postgres | То же: сервис сам выставляет tenant-контекст перед запросом | ⚠️ Не реализовано на стенде (только обсуждали) |
+| **ClickHouse** | Через Gateway (BI/LLM/API) | На каждый HTTP-запрос — тот же паттерн, что и Postgres | То же: сервис сам выставляет tenant-контекст перед запросом | ✅ Реализовано |
 | **ClickHouse** | Напрямую (DBeaver/консоль) | НЕ на каждый запрос — только при первичной настройке | Встроенный LDAP + **Role Mapping** — CH сам, динамически, на каждый логин смотрит группу в LDAP и назначает роль. Row Policy привязана к роли | ⚠️ Не реализовано на стенде |
 | **Airflow** | UI/API (просмотр, запуск DAG, чтение Variables/Connections) | **На каждое действие** — через custom Auth Manager, вызывающий OPA (это HTTP-уровень, как Gateway) | `filter_authorized_dag_ids`/`is_authorized_*` в Auth Manager решают через OPA | ⚠️ Не реализовано, план ниже |
 | **Airflow** | Код внутри DAG (сама загрузка/обработка датасета) | Переиспользует уже существующие пути — Gateway API или credential-vending эндпоинты | НЕ хранить в Airflow Connections долгоживущие мощные креды — DAG сам запрашивает временные | ⚠️ Не реализовано, план ниже |
