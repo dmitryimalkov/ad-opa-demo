@@ -12,21 +12,61 @@
 
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 import httpx
 import jwt
 from jwt import PyJWKClient
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 import psycopg2
 from psycopg2 import sql
+import clickhouse_connect
 
 app = FastAPI(title="Demo Gateway (AD + OPA + RLS)")
+
+
+@app.middleware("http")
+async def log_all_requests(request: Request, call_next):
+    """
+    HTTP access log уровня инфраструктуры — логирует АБСОЛЮТНО ВСЕ
+    запросы, включая те, что не дошли до check_opa (например, 401 при
+    невалидном JWT — это происходит внутри extract_user_context, ДО
+    вызова OPA, поэтому в audit_log такие попытки не попадают вообще).
+    Отдельная таблица от audit_log — это инфраструктурный лог
+    (латентность, статус-коды), не бизнес-решения OPA.
+    """
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - start) * 1000
+
+    try:
+        client = get_ch_client()
+        client.insert(
+            "request_log",
+            [[
+                datetime.now(timezone.utc),
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+                request.client.host if request.client else "",
+            ]],
+            column_names=["ts", "method", "path", "status_code", "duration_ms", "client_ip"],
+            database="audit",
+        )
+    except Exception as e:
+        print(f"[request_log] WARNING: не удалось записать: {e}")
+
+    return response
 
 OPA_URL = os.environ["OPA_URL"]
 DB_DSN = os.environ["DB_DSN"]
 ADMIN_DB_DSN = os.environ["ADMIN_DB_DSN"]
 KEYCLOAK_REALM_URL = os.environ["KEYCLOAK_REALM_URL"]
+CLICKHOUSE_HOST = os.environ["CLICKHOUSE_HOST"]
+CLICKHOUSE_PORT = int(os.environ["CLICKHOUSE_PORT"])
+CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
 
 # Единый TTL для ВСЕХ выдаваемых доступов платформы — JWT (настраивается
 # отдельно в Keycloak, см. README), пароль от Postgres (эта константа),
@@ -91,12 +131,64 @@ def extract_user_context(authorization: str) -> dict:
     return {"tenant_id": tenant_id, "roles": roles, "sub": claims.get("preferred_username")}
 
 
+_ch_client = None
+
+
+def get_ch_client():
+    """Ленивая инициализация клиента ClickHouse (переиспользуется между запросами)."""
+    global _ch_client
+    if _ch_client is None:
+        _ch_client = clickhouse_connect.get_client(
+            host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT,
+            username="default", password=CLICKHOUSE_PASSWORD,
+        )
+    return _ch_client
+
+
+def log_audit(user: dict, action: str, resource: dict, decision: dict) -> None:
+    """
+    Пишет решение OPA в ClickHouse — единая точка аудита для ВСЕХ путей
+    платформы, а не отдельные логи каждого контейнера по отдельности.
+
+    Сознательный выбор: это best-effort логирование. Если ClickHouse
+    недоступен, реальный запрос пользователя НЕ блокируется — мы только
+    печатаем предупреждение в stdout. Для настоящего прода это отдельное
+    решение, которое стоит проговаривать явно: готовы ли вы пускать
+    запросы, которые невозможно проаудировать, или отказ ClickHouse
+    должен быть fail-closed для всей платформы (тогда аудит становится
+    таким же критичным компонентом, как сам OPA).
+    """
+    try:
+        client = get_ch_client()
+        client.insert(
+            "audit_log",
+            [[
+                datetime.now(timezone.utc),
+                user.get("sub") or "",
+                user.get("tenant_id") or "",
+                action,
+                resource.get("type") or "",
+                resource.get("tenant_id") or "",
+                1 if decision.get("allow") else 0,
+                ",".join(decision.get("deny_reason", [])),
+            ]],
+            column_names=[
+                "ts", "user_sub", "user_tenant_id", "action",
+                "resource_type", "resource_tenant_id", "allow", "deny_reason",
+            ],
+            database="audit",
+        )
+    except Exception as e:
+        print(f"[audit] WARNING: не удалось записать аудит-лог: {e}")
+
+
 def check_opa(user: dict, action: str, resource: dict) -> dict:
     """Синхронный вызов OPA. Возвращает {"allow": bool, "deny_reason": [...]}."""
     payload = {"input": {"user": user, "action": action, "resource": resource}}
     resp = httpx.post(OPA_URL, json=payload, timeout=5.0)
     resp.raise_for_status()
     result = resp.json().get("result", {})
+    log_audit(user, action, resource, result)
     return result
 
 
@@ -225,6 +317,49 @@ def get_db_credentials(authorization: str = Header(None)):
         "username": db_username,
         "password": new_password,
         "valid_until": valid_until.isoformat(),
+    }
+
+
+@app.get("/audit-log")
+def get_audit_log(authorization: str = Header(None), limit: int = Query(default=50, le=500)):
+    """
+    Просмотр аудит-лога — сам этот эндпоинт ТОЖЕ проверяется через OPA
+    (action=view_audit_log), доступно только admin. Показывает решения
+    OPA только по своему tenant_id — даже просмотр аудита не даёт
+    увидеть чужую компанию.
+    """
+    user = extract_user_context(authorization)
+
+    resource = {"type": "audit_log", "tenant_id": user["tenant_id"]}
+    decision = check_opa(user, "view_audit_log", resource)
+
+    if not decision.get("allow"):
+        raise HTTPException(
+            status_code=403,
+            detail={"message": "Access denied by OPA", "deny_reason": decision.get("deny_reason", [])},
+        )
+
+    client = get_ch_client()
+    result = client.query(
+        """
+        SELECT ts, user_sub, user_tenant_id, action, resource_type, resource_tenant_id, allow, deny_reason
+        FROM audit.audit_log
+        WHERE user_tenant_id = {tenant_id:String}
+        ORDER BY ts DESC
+        LIMIT {limit:UInt32}
+        """,
+        parameters={"tenant_id": user["tenant_id"], "limit": limit},
+    )
+
+    return {
+        "rows": [
+            {
+                "ts": str(row[0]), "user_sub": row[1], "user_tenant_id": row[2],
+                "action": row[3], "resource_type": row[4], "resource_tenant_id": row[5],
+                "allow": bool(row[6]), "deny_reason": row[7],
+            }
+            for row in result.result_rows
+        ]
     }
 
 

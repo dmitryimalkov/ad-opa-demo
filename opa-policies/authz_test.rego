@@ -55,3 +55,19 @@ test_cannot_get_db_credentials_for_other_tenant {
         "resource": {"type": "database", "tenant_id": "company_b"}
     }
 }
+
+test_admin_can_view_audit_log {
+    allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["admin"]},
+        "action": "view_audit_log",
+        "resource": {"type": "audit_log", "tenant_id": "company_a"}
+    }
+}
+
+test_analyst_cannot_view_audit_log {
+    not allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "view_audit_log",
+        "resource": {"type": "audit_log", "tenant_id": "company_a"}
+    }
+}

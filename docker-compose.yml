@@ -6,6 +6,7 @@ networks:
 
 volumes:
   pgdata:
+  chdata:
 
 services:
 
@@ -116,7 +117,7 @@ services:
   opa:
     image: openpolicyagent/opa:0.65.0
     container_name: demo-opa
-    command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "--watch", "/policies"]
     volumes:
       - ./opa-policies:/policies
     ports:
@@ -145,6 +146,27 @@ services:
     networks:
       - demo-net
 
+  # ClickHouse — для аудит-лога решений OPA (append-only, аналитический
+  # профиль запросов, ровно то, под что ClickHouse проектировался).
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: demo-clickhouse
+    environment:
+      CLICKHOUSE_DB: audit
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: "clickhouse_pass"
+    volumes:
+      - ./clickhouse-init:/docker-entrypoint-initdb.d
+      - chdata:/var/lib/clickhouse
+    ports:
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - demo-net
+
   # Демо-Gateway/API: валидирует JWT, зовёт OPA, ставит tenant_id в сессию Postgres
   demo-api:
     build: ./demo-api
@@ -154,11 +176,15 @@ services:
       DB_DSN: "postgresql://app_user:app_user_pass@postgres:5432/salesdb"
       ADMIN_DB_DSN: "postgresql://postgres:postgres@postgres:5432/salesdb"
       KEYCLOAK_REALM_URL: "http://keycloak:8080/realms/demo"
+      CLICKHOUSE_HOST: "clickhouse"
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_PASSWORD: "clickhouse_pass"
     ports:
       - "8000:8000"
     depends_on:
       - opa
       - postgres
       - keycloak
+      - clickhouse
     networks:
       - demo-net

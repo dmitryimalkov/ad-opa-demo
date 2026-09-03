@@ -5,9 +5,9 @@ import future.keywords.in
 default allow = false
 
 role_permissions := {
-    "admin":   {"sales_data": {"read", "write"}, "database": {"grant_direct_db_access"}},
-    "analyst": {"sales_data": {"read"},           "database": {"grant_direct_db_access"}},
-    "viewer":  {"sales_data": set(),              "database": set()}
+    "admin":   {"sales_data": {"read", "write"}, "database": {"grant_direct_db_access"}, "audit_log": {"view_audit_log"}},
+    "analyst": {"sales_data": {"read"},           "database": {"grant_direct_db_access"}, "audit_log": set()},
+    "viewer":  {"sales_data": set(),              "database": set(),                      "audit_log": set()}
 }
 
 rbac_allow {

@@ -272,7 +272,43 @@ curl -s -X POST http://localhost:8000/db-credentials -H "Authorization: Bearer $
 проще выдавать заново по требованию, чем хранить где-то склад
 активных паролей, который сам по себе стал бы точкой утечки.
 
-## 8. Быстрая проверка "что если RLS отключить" (опционально, для эффекта)
+## 9. Аудит-лог в ClickHouse
+
+Каждое решение OPA (из `/sales`, `/db-credentials` и любого будущего
+эндпоинта, использующего `check_opa`) автоматически пишется в ClickHouse
+— единая точка "кто и когда получил доступ", вместо разрозненных логов
+отдельных контейнеров.
+
+### Как посмотреть
+
+Через сам API (доступно только `admin`):
+```bash
+TOKEN_BOB=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=bob" -d "password=Password123!" | jq -r .access_token)
+
+curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_BOB" | jq
+```
+Bob — admin в Company A, увидит только записи `company_a` (сам эндпоинт
+просмотра лога тоже проходит через OPA и tenant-фильтр).
+
+Alice (analyst) получит `403` — просмотр аудита не входит в её роль:
+```bash
+curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_ALICE" | jq
+```
+
+Напрямую в ClickHouse (для отладки, видно ВСЕ tenant'ы сразу — то, что
+API намеренно скрывает от Alice):
+```bash
+docker exec -it demo-clickhouse clickhouse-client --password clickhouse_pass -d audit -q "SELECT * FROM audit_log ORDER BY ts DESC LIMIT 20 FORMAT Vertical"
+```
+
+### Важная оговорка про надёжность
+
+Логирование — best-effort: если ClickHouse недоступен, запрос
+пользователя всё равно отработает (см. комментарий в коде `log_audit`).
+Это сознательный компромисс для демо; для прода стоит явно решить,
+допустимо ли выполнять действия, которые невозможно проаудировать.
+
+## 10. Быстрая проверка "что если RLS отключить" (опционально, для эффекта)
 
 Чтобы наглядно показать разработчикам ЦЕННОСТЬ RLS — можно временно
 подключиться под суперпользователем `postgres` (не `app_user`) и
