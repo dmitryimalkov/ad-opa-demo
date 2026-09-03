@@ -1,16 +1,15 @@
 # Сценарий демонстрации: AD + Keycloak + OPA + Postgres RLS
 
-Общее время — 15-20 минут. Каждый шаг: команда → что должно произойти →
-что это доказывает. Идите по порядку, не перескакивайте — каждый
-следующий шаг опирается на то, что уже увидели.
+Общее время — 18-23 минуты (добавился шаг про аудит-лог). Каждый шаг:
+команда → что должно произойти → что это доказывает. Идите по порядку,
+не перескакивайте — каждый следующий шаг опирается на то, что уже
+увидели.
 
 ## 0. Перед началом
 
 - Терминал открыт, SSH-сессия на VM активна.
 - Браузер открыт на `http://192.144.13.138:8080` (phpldapadmin) —
-  понадобится в шаге 1. 
-  Login DN: cn=admin,dc=demo,dc=local Password: AdminPass123!
-
+  понадобится в шаге 1.
 - Заранее выполните `docker compose ps` — покажите, что весь стенд
   состоит из отдельных контейнеров (LDAP, Keycloak, OPA, Postgres,
   Gateway) — это не "одна программа", а несколько независимых систем.
@@ -25,12 +24,8 @@ Company A, Carol и Dave — Company B. Вся информация о том, �
 
 ## 2. Логин и что видит Gateway (3 минуты)
 
-ssh -i \Users\malkov.d\.ssh\id_rsa user1@192.144.13.138
-
 ```bash
 TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
-
-echo $TOKEN_ALICE
 
 curl -s http://localhost:8000/whoami -H "Authorization: Bearer $TOKEN_ALICE" | jq
 ```
@@ -93,6 +88,47 @@ docker exec -it demo-opa opa test /policies -v
 `same_tenant` прямо на глазах у команды, перезапустите `opa test` —
 покажите красный `FAIL`. Верните файл обратно.
 
+## 6.5. Аудит-лог — кто и когда получал доступ (3 минуты)
+
+**Тезис перед показом:** "Всё, что мы только что делали — логин Alice,
+чтение `/sales`, отказ Dave'у — уже записано. Не в логах контейнера,
+которые исчезнут при перезапуске, а в отдельной таблице ClickHouse,
+специально под это. Покажу двумя способами — как видит обычный
+пользователь и как видит вся картина целиком."
+
+Получите токен под Bob (admin, Company A):
+```bash
+TOKEN_BOB=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=bob" -d "password=Password123!" | jq -r .access_token)
+
+curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_BOB" | jq
+```
+
+**Ожидаемо:** список записей — но **только** по `company_a`, включая
+Alice, но не Carol/Dave.
+
+**Тезис:** "Это тот же принцип tenant-изоляции, применённый рекурсивно
+— даже сам аудит-лог не показывает Bob'у чужую компанию, хотя он
+admin. И заметьте — Alice (analyst) вообще не может открыть этот
+эндпоинт:"
+
+```bash
+curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_ALICE" | jq
+```
+**Ожидаемо:** `403`.
+
+Теперь покажите "вид с высоты птичьего полёта" — без tenant-фильтра,
+напрямую из ClickHouse (это то, что видит **только** оператор
+платформы, никогда не пользователь):
+```bash
+docker exec -it demo-clickhouse clickhouse-client --password clickhouse_pass -d audit -q "SELECT ts, user_sub, user_tenant_id, action, allow, deny_reason FROM audit_log ORDER BY ts DESC LIMIT 15 FORMAT PrettyCompact"
+```
+
+**Тезис:** "Здесь видно вообще всё — и company_a, и company_b, и все
+отказы с причинами. Это уже не API с фильтром по tenant, а прямой
+доступ к самой базе аудита — то, что должно быть максимально
+ограничено на практике, ровно как мы обсуждали с суперпользователем
+Postgres в следующем шаге."
+
 ## 7. Прямой доступ к БД — другой путь изоляции (4 минуты)
 
 Откройте `http://192.144.13.138:8000/portal` в браузере. Введите
@@ -150,7 +186,8 @@ docker exec -it demo-postgres psql -U postgres -d salesdb -c "SELECT * FROM sale
 "пропуска", а дальше барьер держит нативный механизм (RLS, IAM/подпись
 URL).
 
-**"Что мешает Alice скопировать пароль и отдать его Bob?"** — ничего
-на уровне этого демо не мешает; в реальной системе это решается через
-аудит-логи (кто и когда получал доступ) и короткий TTL, снижающий
-окно возможной утечки.
+**"Что мешает Alice скопировать пароль и отдать его Bob?"** — на уровне
+самого пароля ничего не мешает; но каждая выдача (шаг 6.5) уже
+попадает в аудит-лог с точным временем и tenant'ом, а короткий TTL
+(15 минут) ограничивает окно, в течение которого скопированный пароль
+вообще актуален.
