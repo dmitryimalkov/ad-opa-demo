@@ -34,6 +34,8 @@ Company A, Carol и Dave — Company B. Вся информация о том, �
 ```bash
 TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=alice" -d "password=Password123!" | jq -r .access_token)
 
+http://192.144.13.138:8000/docs
+
 curl -s http://localhost:8000/whoami -H "Authorization: Bearer $TOKEN_ALICE" | jq
 ```
 
