@@ -109,7 +109,7 @@ docker exec -it demo-opa opa test /policies -v
 ```bash
 TOKEN_BOB=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" -d "client_id=demo-gateway" -d "grant_type=password" -d "username=bob" -d "password=Password123!" | jq -r .access_token)
 
-curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_BOB" | jq
+  curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_BOB" | jq
 ```
 
 **Ожидаемо:** список записей — но **только** по `company_a`, включая
