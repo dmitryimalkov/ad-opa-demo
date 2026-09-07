@@ -5,9 +5,27 @@ import future.keywords.in
 default allow = false
 
 role_permissions := {
-    "admin":   {"sales_data": {"read", "write"}, "database": {"grant_direct_db_access"}, "audit_log": {"view_audit_log"}},
-    "analyst": {"sales_data": {"read"},           "database": {"grant_direct_db_access"}, "audit_log": set()},
-    "viewer":  {"sales_data": set(),              "database": set(),                      "audit_log": set()}
+    "admin":   {
+        "sales_data": {"read", "write"},
+        "database": {"grant_direct_db_access"},
+        "audit_log": {"view_audit_log"},
+        "airflow_dag": {"airflow_dag_view", "airflow_dag_trigger", "airflow_dag_delete"},
+        "airflow_variable": {"airflow_variable_view", "airflow_variable_trigger"},
+    },
+    "analyst": {
+        "sales_data": {"read"},
+        "database": {"grant_direct_db_access"},
+        "audit_log": set(),
+        "airflow_dag": {"airflow_dag_view"},
+        "airflow_variable": {"airflow_variable_view"},
+    },
+    "viewer":  {
+        "sales_data": set(),
+        "database": set(),
+        "audit_log": set(),
+        "airflow_dag": set(),
+        "airflow_variable": set(),
+    }
 }
 
 rbac_allow {

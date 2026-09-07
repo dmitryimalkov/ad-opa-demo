@@ -7,6 +7,8 @@ networks:
 volumes:
   pgdata:
   chdata:
+  ldapdata:
+  ldapconfig:
 
 services:
 
@@ -18,6 +20,9 @@ services:
       LDAP_ORGANISATION: "Demo Corp"
       LDAP_DOMAIN: "demo.local"
       LDAP_ADMIN_PASSWORD: "AdminPass123!"
+    volumes:
+      - ldapdata:/var/lib/ldap
+      - ldapconfig:/etc/ldap/slapd.d
     networks:
       - demo-net
     ports:
@@ -186,5 +191,41 @@ services:
       - postgres
       - keycloak
       - clickhouse
+    networks:
+      - demo-net
+
+  # Airflow — оркестрация загрузки датасетов и метаданных.
+  # Логин — напрямую через LDAP (FabAuthManager + Flask-AppBuilder
+  # AUTH_LDAP), та же нативная схема, что у Postgres/ClickHouse.
+  # Авторизация (что видно, что можно запускать) — через кастомный
+  # OpaFabAuthManager, который на каждое действие спрашивает OPA.
+  airflow:
+    build: ./airflow-custom
+    container_name: demo-airflow
+    command: >
+      bash -c "airflow db migrate &&
+               (airflow scheduler &) &&
+               (airflow dag-processor &) &&
+               airflow api-server"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow_pass@postgres:5432/airflow"
+      AIRFLOW__CORE__AUTH_MANAGER: "opa_auth_manager.OpaFabAuthManager"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      OPA_URL: "http://opa:8181/v1/data/platform/authz"
+      PYTHONPATH: "/opt/airflow/custom"
+    volumes:
+      - ./airflow-dags:/opt/airflow/dags
+      - ./airflow-custom/opa_auth_manager.py:/opt/airflow/custom/opa_auth_manager.py
+      - ./airflow-custom/webserver_config.py:/opt/airflow/webserver_config.py
+    ports:
+      - "8090:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ldap:
+        condition: service_started
+      opa:
+        condition: service_started
     networks:
       - demo-net

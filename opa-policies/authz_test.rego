@@ -71,3 +71,43 @@ test_analyst_cannot_view_audit_log {
         "resource": {"type": "audit_log", "tenant_id": "company_a"}
     }
 }
+
+test_analyst_can_view_own_dag {
+    allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "airflow_dag_view",
+        "resource": {"type": "airflow_dag", "tenant_id": "company_a"}
+    }
+}
+
+test_analyst_cannot_view_other_tenant_dag {
+    not allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "airflow_dag_view",
+        "resource": {"type": "airflow_dag", "tenant_id": "company_b"}
+    }
+}
+
+test_analyst_cannot_trigger_dag {
+    not allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "airflow_dag_trigger",
+        "resource": {"type": "airflow_dag", "tenant_id": "company_a"}
+    }
+}
+
+test_admin_can_trigger_own_dag {
+    allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["admin"]},
+        "action": "airflow_dag_trigger",
+        "resource": {"type": "airflow_dag", "tenant_id": "company_a"}
+    }
+}
+
+test_viewer_cannot_see_any_dag {
+    not allow with input as {
+        "user": {"tenant_id": "company_b", "roles": ["viewer"]},
+        "action": "airflow_dag_view",
+        "resource": {"type": "airflow_dag", "tenant_id": "company_b"}
+    }
+}
