@@ -81,11 +81,11 @@ services:
     command: start --http-enabled=true --hostname-strict=false
     environment:
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN_PASSWORD: "ofTyy0SmW5ofBHBMu68WSOYd"
       KC_DB: postgres
       KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
       KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak_pass
+      KC_DB_PASSWORD: "RygByGyxXBHZPJfOiKMRnhRF"
     ports:
       - "8081:8080"
     depends_on:
@@ -110,7 +110,7 @@ services:
     entrypoint: >
       sh -c '
       echo "[init] Ждём готовности Keycloak...";
-      until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin; do
+      until /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password ofTyy0SmW5ofBHBMu68WSOYd; do
         sleep 5;
       done;
       /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE;
@@ -137,7 +137,7 @@ services:
     environment:
       POSTGRES_DB: salesdb
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: "BLmLcV8xaKqiSTLiFM1HY7_d"
     volumes:
       - ./postgres-init:/docker-entrypoint-initdb.d
       - pgdata:/var/lib/postgresql/data
@@ -159,7 +159,7 @@ services:
     environment:
       CLICKHOUSE_DB: audit
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: "clickhouse_pass"
+      CLICKHOUSE_PASSWORD: "YqBucHdJFWRna8KvAm1JpHW3"
     volumes:
       - ./clickhouse-init:/docker-entrypoint-initdb.d
       - chdata:/var/lib/clickhouse
@@ -178,12 +178,12 @@ services:
     container_name: demo-api
     environment:
       OPA_URL: "http://opa:8181/v1/data/platform/authz"
-      DB_DSN: "postgresql://app_user:app_user_pass@postgres:5432/salesdb"
-      ADMIN_DB_DSN: "postgresql://postgres:postgres@postgres:5432/salesdb"
+      DB_DSN: "postgresql://app_user:gk9XmJzdivYQndP5-DrKcXxH@postgres:5432/salesdb"
+      ADMIN_DB_DSN: "postgresql://postgres:BLmLcV8xaKqiSTLiFM1HY7_d@postgres:5432/salesdb"
       KEYCLOAK_REALM_URL: "http://keycloak:8080/realms/demo"
       CLICKHOUSE_HOST: "clickhouse"
       CLICKHOUSE_PORT: "8123"
-      CLICKHOUSE_PASSWORD: "clickhouse_pass"
+      CLICKHOUSE_PASSWORD: "YqBucHdJFWRna8KvAm1JpHW3"
     ports:
       - "8000:8000"
     depends_on:
@@ -209,7 +209,7 @@ services:
                airflow api-server"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow_pass@postgres:5432/airflow"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:P4xWxryvVnaUpqb3BDxxS5M6@postgres:5432/airflow"
       AIRFLOW__CORE__AUTH_MANAGER: "opa_auth_manager.OpaFabAuthManager"
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       OPA_URL: "http://opa:8181/v1/data/platform/authz"

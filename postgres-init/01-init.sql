@@ -30,6 +30,6 @@ CREATE POLICY tenant_isolation_policy ON sales
 -- Отдельная роль приложения (не суперпользователь) — на неё и распространяется RLS.
 -- Суперпользователь postgres игнорирует RLS по умолчанию, поэтому демо-api
 -- должен подключаться именно под app_user, а не под postgres.
-CREATE ROLE app_user LOGIN PASSWORD 'app_user_pass';
+CREATE ROLE app_user LOGIN PASSWORD 'gk9XmJzdivYQndP5-DrKcXxH';
 GRANT SELECT, INSERT ON sales TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE sales_id_seq TO app_user;

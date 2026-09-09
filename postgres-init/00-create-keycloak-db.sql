@@ -3,7 +3,7 @@
 -- для демо-стенда, но НЕ для прода (там Keycloak лучше держать в собственном
 -- экземпляре БД, отдельном от бизнес-данных).
 
-CREATE USER keycloak WITH PASSWORD 'keycloak_pass';
+CREATE USER keycloak WITH PASSWORD 'RygByGyxXBHZPJfOiKMRnhRF';
 CREATE DATABASE keycloak OWNER keycloak;
 
 -- В PostgreSQL 15+ права CREATE на схему public по умолчанию не выдаются
