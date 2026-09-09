@@ -4,8 +4,9 @@
 команда → что должно произойти → что это доказывает. 
 
 Подключение
-ssh -i \Users\malkov.d\.ssh\id_rsa user1@192.144.13.138
 
+Win
+ssh -i \Users\malkov.d\.ssh\id_rsa user1@192.144.13.138
 Подъем и выравнивание
 
 Выравнивание: pre-flight
@@ -129,7 +130,7 @@ curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_ALICE" 
 напрямую из ClickHouse (это то, что видит **только** оператор
 платформы, никогда не пользователь):
 ```bash
-docker exec -it demo-clickhouse clickhouse-client --password clickhouse_pass -d audit -q "SELECT ts, user_sub, user_tenant_id, action, allow, deny_reason FROM audit_log ORDER BY ts DESC LIMIT 15 FORMAT PrettyCompact"
+docker exec -it demo-clickhouse clickhouse-client --password YqBucHdJFWRna8KvAm1JpHW3 -d audit -q "SELECT ts, user_sub, user_tenant_id, action, allow, deny_reason FROM audit_log ORDER BY ts DESC LIMIT 15 FORMAT PrettyCompact"
 ```
 
 **Тезис:** "Здесь видно вообще всё — и company_a, и company_b, и все
