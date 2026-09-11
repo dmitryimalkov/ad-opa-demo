@@ -9,6 +9,7 @@ volumes:
   chdata:
   ldapdata:
   ldapconfig:
+  miniodata:
 
 services:
 
@@ -227,5 +228,76 @@ services:
         condition: service_started
       opa:
         condition: service_started
+    networks:
+      - demo-net
+
+  # MinIO — S3-совместимое хранилище датасетов. Аутентификация НАПРЯМУЮ
+  # через LDAP (AssumeRoleWithLDAPIdentity, встроенный STS MinIO) — та же
+  # нативная схема, что у Postgres/ClickHouse/Airflow. Изоляция по
+  # tenant — через IAM-политику, привязанную к LDAP-группе (не через
+  # живой вызов OPA — тут OPA участвует один раз, на этапе решения
+  # "какой группе какая политика", а не на каждый S3-запрос, т.к. S3 —
+  # тоже "сырой" протокол, как Postgres/ClickHouse, а не HTTP-API
+  # уровня приложения, как Airflow).
+  minio:
+    image: minio/minio:latest
+    container_name: demo-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "Eaws-qymO03nZ5k6m_cq4l6WW8I"
+      MINIO_IDENTITY_LDAP_SERVER_ADDR: "ldap:389"
+      MINIO_IDENTITY_LDAP_SERVER_INSECURE: "on"
+      MINIO_IDENTITY_LDAP_LOOKUP_BIND_DN: "cn=admin,dc=demo,dc=local"
+      MINIO_IDENTITY_LDAP_LOOKUP_BIND_PASSWORD: "AdminPass123!"
+      MINIO_IDENTITY_LDAP_USER_DN_SEARCH_BASE_DN: "ou=people,dc=demo,dc=local"
+      MINIO_IDENTITY_LDAP_USER_DN_SEARCH_FILTER: "(uid=%s)"
+      MINIO_IDENTITY_LDAP_GROUP_SEARCH_BASE_DN: "ou=groups,dc=demo,dc=local"
+      MINIO_IDENTITY_LDAP_GROUP_SEARCH_FILTER: "(&(objectClass=groupOfNames)(member=%d))"
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - demo-net
+
+  # Одноразовая настройка: bucket + СОДЕРЖИМОЕ политик (не привязка к группам —
+  # это теперь делает minio-sync, см. ниже).
+  minio-init:
+    image: minio/mc:latest
+    container_name: demo-minio-init
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "Eaws-qymO03nZ5k6m_cq4l6WW8I"
+    volumes:
+      - ./minio-init/init.sh:/init.sh:ro
+      - ./minio-init/company-a-policy.json:/policies/company-a-policy.json:ro
+      - ./minio-init/company-b-policy.json:/policies/company-b-policy.json:ro
+    entrypoint: ["sh", "/init.sh"]
+    networks:
+      - demo-net
+
+  # Связующий код между authz.rego (OPA) и MinIO — РЕАЛЬНО спрашивает
+  # OPA про каждую LDAP-группу и приводит привязки политик в соответствие.
+  # НЕ live-синхронизация — запускайте заново после правки authz.rego:
+  #   docker compose run --rm minio-sync
+  minio-sync:
+    build: ./minio-sync
+    container_name: demo-minio-sync
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      opa:
+        condition: service_started
+      ldap:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: "admin"
+      MINIO_ROOT_PASSWORD: "Eaws-qymO03nZ5k6m_cq4l6WW8I"
+      MINIO_URL: "http://minio:9000"
+      OPA_URL: "http://opa:8181/v1/data/platform/authz"
     networks:
       - demo-net

@@ -320,6 +320,97 @@ docker exec -it demo-clickhouse clickhouse-client --password YqBucHdJFWRna8KvAm1
 нужен только для `/db-credentials`) — отдельная, более чувствительная
 переменная, которую стоит беречь строже, чем `DB_DSN`.
 
+## 11.5. MinIO — S3 через нативный LDAP (AssumeRoleWithLDAPIdentity)
+
+Тот же принцип "нативная авторизация", что у Postgres/ClickHouse/Airflow,
+только для S3. Пользователь логинится своим LDAP-паролем напрямую в
+MinIO, без Keycloak/Gateway/OPA в реальном времени — MinIO сам ходит в
+LDAP через встроенный STS (`AssumeRoleWithLDAPIdentity`), находит группы
+пользователя и применяет привязанную к ним IAM-политику.
+
+### Роль OPA здесь — теперь реальная, но не в реальном времени
+
+В отличие от Gateway (OPA на каждый HTTP-запрос) и Airflow (OPA на
+каждое действие), здесь OPA **не может** участвовать в реальном
+времени — S3, как и Postgres/ClickHouse, "сырой" протокол, а не
+HTTP-API уровня приложения. Но, в отличие от первой версии этого
+стенда, привязка политик теперь не захардкожена — отдельный сервис
+**`minio-sync`** (`minio-sync/sync_minio_policies.py`) реально:
+
+1. Перечисляет все LDAP-группы.
+2. Для каждой спрашивает OPA: `action=s3_access`, `resource.type=s3_bucket`.
+3. Привязывает/отвязывает IAM-политику в MinIO по ответу.
+
+**Честно:** это не live-канал, как у Gateway/Airflow — `authz.rego` и
+MinIO совпадают ровно на момент запуска `minio-sync`, не постоянно.
+После любой правки `authz.rego` нужно запустить синхронизацию заново:
+```bash
+docker compose run --rm minio-sync
+```
+Сам MinIO **не требует перезапуска** — привязки применяются мгновенно
+через API, просто их применяет именно этот скрипт, а не что-то,
+что следит за `authz.rego` само.
+
+### Применение
+
+```bash
+docker compose up -d minio
+docker compose up -d minio-init
+docker compose up -d minio-sync
+docker logs demo-minio-sync
+```
+Ожидаемый финал лога — `[minio-sync] Синхронизация завершена.`, с
+построчным выводом, что было привязано/отвязано для каждой группы.
+
+### Тест — Alice (Company A) получает временные credentials
+
+```bash
+docker exec demo-api python3 /dev/stdin alice Password123! < minio-init/minio_ldap_test.py
+```
+(или скопируйте `minio_ldap_test.py` внутрь контейнера заранее через
+`docker cp`, если неудобно передавать через stdin)
+
+Ожидаемо — вывод с `AccessKeyId`/`SecretAccessKey`/`SessionToken`.
+
+### Проверка изоляции — тот же "вау-момент", что и с DAG в Airflow
+
+```bash
+docker exec demo-api pip install --quiet boto3
+docker exec demo-api python3 /dev/stdin <access_key> <secret_key> <session_token> < minio-init/minio_list_test.py
+```
+Подставьте значения из предыдущего шага. Ожидаемо — `company_a/`
+доступен, `company_b/` — `AccessDenied`.
+
+Повторите то же самое под `carol`/`Password123!` — картина должна
+зеркально перевернуться. Под `dave`/`Password123!` (viewer) — сам
+`AssumeRoleWithLDAPIdentity` пройдёт (LDAP-логин не зависит от
+политики), но **любая** попытка обратиться к bucket должна вернуть
+`AccessDenied` — у него не привязано вообще никакой политики.
+
+### Консоль MinIO (для наглядности на демонстрации)
+
+`http://<VM_IP>:9001`, логин `admin`/root-пароль (см.
+`docker-compose.yml`, `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) — это
+root-доступ администратора платформы, не для обычных пользователей.
+
+### Честная оговорка — pull, не push
+
+Как и в случае с Postgres/ClickHouse/Airflow, здесь **нет** второго
+независимого барьера уровня RLS — если IAM-политика в MinIO настроена
+неверно, ничего не подстрахует. И теперь, когда есть `minio-sync`,
+стоит отдельно понимать: связь с `authz.rego` реальная, но **вы**
+отвечаете за то, чтобы её запускать заново после изменений в политике
+— автоматического триггера на правку файла нет (в отличие от `opa
+--watch`, который сам подхватывает изменения для Gateway/Airflow).
+
+### Известное ограничение — только MinIO, не cloud.ru
+
+Как обсуждали в самом начале — `AssumeRoleWithLDAPIdentity` это
+специфика конкретно MinIO-сервера, а не общая часть S3-протокола.
+У cloud.ru Object Storage ничего подобного нет — только статичные
+персональные ключи. Этот путь остаётся учебным; presigned URL через
+Gateway (следующий пункт в плане) — то, что реально переедет в прод.
+
 ## 11. Инцидент безопасности — Security Group и открытые порты
 
 **Что произошло (2026-09-08):** порт `5432` (Postgres) был открыт на
