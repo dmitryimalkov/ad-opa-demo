@@ -11,6 +11,7 @@ role_permissions := {
         "audit_log": {"view_audit_log"},
         "airflow_dag": {"airflow_dag_view", "airflow_dag_trigger", "airflow_dag_delete"},
         "airflow_variable": {"airflow_variable_view", "airflow_variable_trigger"},
+        "s3_bucket": {"s3_access"},
     },
     "analyst": {
         "sales_data": {"read"},
@@ -18,6 +19,7 @@ role_permissions := {
         "audit_log": set(),
         "airflow_dag": {"airflow_dag_view"},
         "airflow_variable": {"airflow_variable_view"},
+        "s3_bucket": {"s3_access"},
     },
     "viewer":  {
         "sales_data": set(),
@@ -25,6 +27,7 @@ role_permissions := {
         "audit_log": set(),
         "airflow_dag": set(),
         "airflow_variable": set(),
+        "s3_bucket": set(),
     }
 }
 

@@ -111,3 +111,27 @@ test_viewer_cannot_see_any_dag {
         "resource": {"type": "airflow_dag", "tenant_id": "company_b"}
     }
 }
+
+test_analyst_can_access_own_s3_bucket {
+    allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "s3_access",
+        "resource": {"type": "s3_bucket", "tenant_id": "company_a"}
+    }
+}
+
+test_viewer_cannot_access_s3_bucket {
+    not allow with input as {
+        "user": {"tenant_id": "company_b", "roles": ["viewer"]},
+        "action": "s3_access",
+        "resource": {"type": "s3_bucket", "tenant_id": "company_b"}
+    }
+}
+
+test_analyst_cannot_access_other_tenant_s3_bucket {
+    not allow with input as {
+        "user": {"tenant_id": "company_a", "roles": ["analyst"]},
+        "action": "s3_access",
+        "resource": {"type": "s3_bucket", "tenant_id": "company_b"}
+    }
+}

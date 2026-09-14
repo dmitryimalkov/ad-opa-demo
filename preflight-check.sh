@@ -16,11 +16,11 @@ echo "Preflight-проверка демо-стенда"
 echo "===================================="
 
 echo ""
-echo "[1/8] Все ли контейнеры подняты"
+echo "[1/9] Все ли контейнеры подняты"
 docker compose ps
 
 echo ""
-echo "[2/8] Проверка пароля postgres (суперпользователь, нужен для /db-credentials)"
+echo "[2/9] Проверка пароля postgres (суперпользователь, нужен для /db-credentials)"
 CHECK=$(docker exec demo-api python -c "
 import psycopg2, sys
 try:
@@ -39,7 +39,7 @@ else
 fi
 
 echo ""
-echo "[3/8] Проверка пароля keycloak (роль БД для состояния Keycloak)"
+echo "[3/9] Проверка пароля keycloak (роль БД для состояния Keycloak)"
 CHECK=$(docker exec demo-api python -c "
 import psycopg2, sys
 try:
@@ -67,7 +67,7 @@ if [ "$NEEDS_KEYCLOAK_RESTART" == "1" ]; then
 fi
 
 echo ""
-echo "[4/8] Синхронизация настроек realm demo (Require SSL, Access Token Lifespan)"
+echo "[4/9] Синхронизация настроек realm demo (Require SSL, Access Token Lifespan)"
 docker exec demo-keycloak /opt/keycloak/bin/kcadm.sh config credentials \
     --server http://localhost:8080 --realm master --user admin --password ofTyy0SmW5ofBHBMu68WSOYd > /dev/null
 docker exec demo-keycloak /opt/keycloak/bin/kcadm.sh update realms/demo \
@@ -75,7 +75,7 @@ docker exec demo-keycloak /opt/keycloak/bin/kcadm.sh update realms/demo \
 echo "OK: Require SSL=None, Access Token Lifespan=900 применены (идемпотентно, безопасно гонять каждый раз)"
 
 echo ""
-echo "[5/8] Сквозная проверка: логин -> /whoami -> /sales"
+echo "[5/9] Сквозная проверка: логин -> /whoami -> /sales"
 TOKEN_ALICE=$(curl -s -X POST "http://localhost:8081/realms/demo/protocol/openid-connect/token" \
     -d "client_id=demo-gateway" -d "grant_type=password" \
     -d "username=alice" -d "password=Password123!" | jq -r .access_token)
@@ -97,7 +97,7 @@ else
 fi
 
 echo ""
-echo "[6/8] Проверка ClickHouse (аудит-лог)"
+echo "[6/9] Проверка ClickHouse (аудит-лог)"
 CH_CHECK=$(docker exec demo-clickhouse clickhouse-client --password YqBucHdJFWRna8KvAm1JpHW3 -q "SELECT 1" 2>/dev/null || echo "FAIL")
 if [ "$CH_CHECK" == "1" ]; then
     echo "OK: ClickHouse отвечает"
@@ -107,11 +107,23 @@ else
 fi
 
 echo ""
-echo "[7/8] Тесты OPA-политик"
+echo "[7/9] Проверка MinIO (S3, LDAP-логин через AssumeRoleWithLDAPIdentity)"
+MINIO_CHECK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000/minio/health/live 2>/dev/null || echo "000")
+if [ "$MINIO_CHECK" == "200" ]; then
+    echo "OK: MinIO отвечает"
+else
+    echo "ПРЕДУПРЕЖДЕНИЕ: MinIO не отвечает (код $MINIO_CHECK) — S3-функционал недоступен,"
+    echo "остальной стенд (Postgres/Keycloak/Airflow) не затронут"
+fi
+echo "Напоминание: если authz.rego менялся с прошлого раза, привязки"
+echo "политик MinIO нужно обновить вручную: docker compose run --rm minio-sync"
+
+echo ""
+echo "[8/9] Тесты OPA-политик"
 docker exec demo-opa opa test /policies -v | tail -6
 
 echo ""
-echo "[8/8] НАПОМИНАНИЕ: сверьтесь с правилами Security Group"
+echo "[9/9] НАПОМИНАНИЕ: сверьтесь с правилами Security Group"
 echo "------------------------------------------------------------------"
 echo "Этот скрипт не может проверить Security Group сам (нужен доступ"
 echo "к консоли/API cloud.ru) — поэтому просто напоминает, вручную."
@@ -124,6 +136,8 @@ echo "  8181   OPA                    ТОЛЬКО с вашего IP"
 echo "  8081   Keycloak admin         ТОЛЬКО с вашего IP"
 echo "  8080   phpldapadmin           Рекомендуется — тоже с вашего IP"
 echo "  8090   Airflow                На ваше усмотрение"
+echo "  9000   MinIO S3 API           На ваше усмотрение"
+echo "  9001   MinIO Console          Рекомендуется — с вашего IP (root-доступ)"
 echo "  8000   demo-api Gateway       На ваше усмотрение"
 echo "  22     SSH                    0.0.0.0/0 приемлемо (только ключ)"
 echo "  80     nginx proxy            Если не используется — УДАЛИТЬ правило"
