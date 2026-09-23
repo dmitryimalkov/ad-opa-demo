@@ -101,7 +101,15 @@ docker exec -it demo-opa opa test /policies -v
 *Опционально, для эффекта:* откройте `authz.rego`, ослабьте условие
 `same_tenant` прямо на глазах у команды, перезапустите `opa test` —
 покажите красный `FAIL`. Верните файл обратно.
+```
+same_tenant {
+    input.user.tenant_id == input.resource.tenant_id
+}
 
+same_tenant {
+    true
+}
+```
 **Важно для себя (не для аудитории):** если правите `authz.rego`
 вживую — **следите за кавычками у строк** (`{"s3_access"}`, а не
 `{s3_access}`). Без кавычек OPA не скомпилирует файл и молча
@@ -142,7 +150,7 @@ curl -s http://localhost:8000/audit-log -H "Authorization: Bearer $TOKEN_ALICE" 
 напрямую из ClickHouse (это то, что видит **только** оператор
 платформы, никогда не пользователь):
 ```bash
-docker exec -it demo-clickhouse clickhouse-client --password <ваш_пароль_clickhouse> -d audit -q "SELECT ts, user_sub, user_tenant_id, action, allow, deny_reason FROM audit_log ORDER BY ts DESC LIMIT 15 FORMAT PrettyCompact"
+docker exec -it demo-clickhouse clickhouse-client --password YqBucHdJFWRna8KvAm1JpHW3 -d audit -q "SELECT ts, user_sub, user_tenant_id, action, allow, deny_reason FROM audit_log ORDER BY ts DESC LIMIT 25 FORMAT PrettyCompact"
 ```
 
 **Тезис:** "Здесь видно вообще всё — и company_a, и company_b, и все
