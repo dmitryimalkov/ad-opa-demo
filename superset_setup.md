@@ -9,7 +9,7 @@ docker exec -i demo-postgres psql -U postgres -d salesdb -c \
   "ALTER ROLE tenant_company_b_role LOGIN PASSWORD 'MwBYElSYMSt2hLnXWcpLnHA2';"
 
 ```
-Комментарий: В той же salesdb — отдельной БД под это никто не заводил.
+_**Комментарий: В той же salesdb — отдельной БД под это никто не заводил.**_
 
 В коде DAG это видно прямо по POSTGRES_CONN_ID = "salesdb_postgres" и conn_info.schema (то есть имя БД) берётся из Airflow-коннекшена salesdb_postgres, который был настроен именно на salesdb.
 
