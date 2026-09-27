@@ -164,6 +164,10 @@ scp -i /Users/dmitry/Downloads/id_rsa \
     opa_security_manager.py \
     user1@192.144.13.138:~/ad-opa-demo/superset-custom/opa_security_manager.py
 ```
+**Сделать директорию на ВМ, если нет**
+```bash
+ssh -i /Users/dmitry/Downloads/id_rsa user1@192.144.13.138 "mkdir -p ~/ad-opa-demo/superset-custom"
+```
 # Шаг 4 Готовимся развернуть BI Superset
 Скачайте оба (~/Downloads/Dockerfile и ~/Downloads/superset_config.py) и закиньте в ту же папку, куда уже уехал opa_security_manager.py:
 ```bash
@@ -174,3 +178,74 @@ scp -i /Users/dmitry/Downloads/id_rsa \
 ### Дальше на ВМ, по порядку:
 
 1. Метаданные-БД Superset в Postgres (отдельная от salesdb — там только тенантские данные):
+```bash
+docker exec -i demo-postgres psql -U postgres -c \
+  "CREATE ROLE superset_meta LOGIN PASSWORD 'vv-QkjoEUpWGDZNhIN69KFUG';"
+docker exec -i demo-postgres psql -U postgres -c \
+  "CREATE DATABASE superset_meta OWNER superset_meta;"
+```
+**Комментарии**
+Это пароль (vv-QkjoEUpWGDZNhIN69KFUG) для роли superset_meta в Postgres — той, под которой Superset хранит свою собственную служебную БД (superset_meta): 
+- дашборды, датасеты, пользователей, права доступа и т.д.
+
+  Это отдельная база, никак не связанная с salesdb/sales_transactions — она нужна Superset для внутреннего состояния приложения, а не для бизнес-данных тенантов.
+
+Команды, которыми она была создана (шаг 4 этой сессии, до подключения самого Superset):
+
+```bash
+docker exec -i demo-postgres psql -U postgres -c \
+  "CREATE ROLE superset_meta LOGIN PASSWORD 'vv-QkjoEUpWGDZNhIN69KFUG';"
+docker exec -i demo-postgres psql -U postgres -c \
+  "CREATE DATABASE superset_meta OWNER superset_meta;"
+```
+Этот же пароль прописан в superset_config.py в SQLALCHEMY_DATABASE_URI — именно им Superset подключается к своей метаданные-БД при каждом старте контейнера (это видно было в логах docker logs demo-superset — все те Running upgrade ... строки это alembic-миграции внутри именно этой superset_meta).
+2. Добавить сервис superset в docker-compose.yml — дописываем в конец файла, отступ такой же, как у остальных сервисов:
+```bash
+cat >> ~/ad-opa-demo/docker-compose.yml << 'EOF'
+
+  # Superset — BI-дашборды. Логин напрямую через LDAP (та же нативная
+  # схема, что у Airflow/Postgres/ClickHouse/MinIO). Авторизация на
+  # дашборды/датасеты — через кастомный OpaSupersetSecurityManager,
+  # который на каждое обращение спрашивает OPA (тот же принцип, что
+  # OpaFabAuthManager у Airflow).
+  superset:
+    build: ./superset-custom
+    container_name: demo-superset
+    command: >
+      bash -c "superset db upgrade &&
+               superset init &&
+               gunicorn --bind 0.0.0.0:8088 --workers 2 --timeout 120 'superset.app:create_app()'"
+    environment:
+      OPA_URL: "http://opa:8181/v1/data/platform/authz"
+      LDAP_URI: "ldap://ldap:389"
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ldap:
+        condition: service_started
+      opa:
+        condition: service_started
+    networks:
+      - demo-net
+EOF
+```
+  3. Собрать и поднять:
+```bash
+docker compose build superset
+docker compose up -d superset
+docker compose ps superset
+```
+4. Смотрим логи первого старта (там db upgrade + superset init — если что-то упадёт на импорте opa_security_manager или на LDAP-конфиге, будет видно сразу):
+```bash
+docker logs demo-superset --tail 80
+```   
+### Проверка
+1. Сначала проверка изнутри ВМ (чтобы сразу отделить проблему с LDAP-логином от проблемы с внешним доступом — помните историю с 9000/9001, которую упёрлись в firewall cloud.ru):
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/login/
+```
+Ожидаем 200
+
+2. Попробуйте открыть в браузере http://192.144.13.138:8088/login/ и залогиниться как alice/Password123! (то же тестовое имя/пароль, что для MinIO/Airflow).
