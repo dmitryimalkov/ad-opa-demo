@@ -19,3 +19,15 @@ _**Комментарий: В той же salesdb — отдельной БД п
 - sales_transactions — новая, которую завели DAG-и (_ensure_table() при первом запуске), с реальными объёмами (3381 строка company_a, 11408 строк company_b). Она переиспользует те же роли (tenant_company_a_role/tenant_company_b_role), но политики у неё свои, под своим именем (tenant_a_direct_access/tenant_b_direct_access — да, совпадают по названию с политиками на sales, но это разные объекты, привязанные каждый к своей таблице).
 
 То есть отдельную БД не заводили сознательно — RLS и так разграничивает по строкам внутри одной БД, а Superset-подключения из плана будут смотреть именно на sales_transactions в salesdb.
+
+ - Сразу проверка, что роль реально видит только свои строки (должно быть 1 строка с company_a, второй запрос — с company_b):
+```bash
+docker exec -i demo-postgres psql -U tenant_company_a_role -d salesdb -h localhost -c \
+  "SELECT tenant_id, count(*) FROM sales_transactions GROUP BY tenant_id;"
+docker exec -i demo-postgres psql -U tenant_company_b_role -d salesdb -h localhost -c \
+  "SELECT tenant_id, count(*) FROM sales_transactions GROUP BY tenant_id;"
+```
+_**Комментарий**_
+(Пароли попросит psql, если он не подхватит PGPASSWORD — можно добавить -e PGPASSWORD=... перед psql в docker exec, или добавить временно в pg_hba.conf доверие для localhost, если он уже так настроен для postgres.)
+
+Пришлите вывод — если обе роли видят только свой tenant_id, двигаемся к authz.rego.
