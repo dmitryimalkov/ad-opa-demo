@@ -231,6 +231,7 @@ cat >> ~/ad-opa-demo/docker-compose.yml << 'EOF'
       - demo-net
 EOF
 ```
+# Шаг 5 Разворачиваем Superset
   3. Собрать и поднять:
 ```bash
 docker compose build superset
@@ -247,5 +248,13 @@ docker logs demo-superset --tail 80
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/login/
 ```
 Ожидаем 200
-
 2. Попробуйте открыть в браузере http://192.144.13.138:8088/login/ и залогиниться как alice/Password123! (то же тестовое имя/пароль, что для MinIO/Airflow).
+
+# Шаг 6 Создаем техническую роль в AD (LDAP)
+Ясно, заводим — по тому же паттерну, что openmetadata-svc: LDAP-аккаунт вне групп CompanyA-*/CompanyB-*, чтобы у него не было tenant_id, плюс новая сервисная роль в OPA (bi_admin, обходит same_tenant, как metadata_ingestion), чтобы OpaSupersetSecurityManager пускал его к дашбордам/датасетам обоих тенантов при настройке.
+
+1. Сгенерировать хэш пароля и завести LDAP-аккаунт superset-admin + группу Platform-BiAdmin (та же схема, что openmetadata-svc/Platform-MetadataIngestion):
+```bash
+docker exec demo-ldap slappasswd -s '8YFmca1rSSy0xmOpo3JnFnSr'
+```
+3. 
