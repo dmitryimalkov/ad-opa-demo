@@ -131,3 +131,10 @@ deny_reason["role_not_permitted"] {
 }
 EOF
 ```
+*Проверка*
+OPA у вас в docker-compose подхватывает файлы политик на лету — проверьте, что он принял без ошибок:
+
+```bash
+docker logs demo-opa --tail 5
+```
+Ожидаем "err":null. Пришлёте — двигаемся к opa_security_manager.py.
