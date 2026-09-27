@@ -149,3 +149,18 @@ curl -s -X POST http://localhost:8181/v1/data/platform/authz \
 Ожидаемо: "allow": false, "deny_reason": {"cross_tenant_access": true}.
 
 Если порт 8181 наружу с ВМ не проброшен — то же самое можно прогнать изнутри контейнера: docker exec demo-opa там скорее всего нет curl, так что тогда через docker exec -i demo-api python3 -c "..." с httpx/urllib на http://opa:8181/..., как в остальных проверках этой сессии.
+
+# Шаг 3 Прописываем политики opa_security_manager.py (наследование)
+Что здесь важно:
+
+- raise_for_dashboard_access блокирует открытие конкретного чужого дашборда, но can_access_dashboard обязателен отдельно — без него чужие дашборды всё ещё были бы видны в общем списке /dashboard/list/, просто не открывались бы по клику. Тот же нюанс, что get_authorized_dag_ids у Airflow — одной точки перехвата недостаточно.
+- Ресурсы без префикса <tenant>__ в имени (например, служебные дашборды без тенанта) — намеренно пропускаются к штатной FAB-логике, а не блокируются вслепую.
+- OPA недоступен → отказ (fail-closed), как и в opa_auth_manager.py.
+- Названия исключений/классов (DashboardAccessDeniedError, SupersetSecurityException) могут не совпасть с вашей версией Superset — если будет ImportError/AttributeError, пришлёте traceback, поправим под точную версию.
+
+Закинуть файл на ВМ можно тем же scp, что и раньше:
+```bash
+scp -i /Users/dmitry/Downloads/id_rsa \
+    opa_security_manager.py \
+    user1@192.144.13.138:~/ad-opa-demo/superset-custom/opa_security_manager.py
+```
