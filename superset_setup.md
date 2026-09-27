@@ -138,3 +138,14 @@ OPA у вас в docker-compose подхватывает файлы полити
 docker logs demo-opa --tail 5
 ```
 Ожидаем "err":null. Пришлёте — двигаемся к opa_security_manager.py.
+## Дополнительные проверки
+```bash
+curl -s -X POST http://localhost:8181/v1/data/platform/authz \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"user":{"tenant_id":"company_a","roles":["analyst"]},"action":"bi_view","resource":{"type":"bi_dashboard","tenant_id":"company_a"}}}' \
+  | python3 -m json.tool
+
+```
+Ожидаемо: "allow": false, "deny_reason": {"cross_tenant_access": true}.
+
+Если порт 8181 наружу с ВМ не проброшен — то же самое можно прогнать изнутри контейнера: docker exec demo-opa там скорее всего нет curl, так что тогда через docker exec -i demo-api python3 -c "..." с httpx/urllib на http://opa:8181/..., как в остальных проверках этой сессии.
