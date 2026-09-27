@@ -164,3 +164,13 @@ scp -i /Users/dmitry/Downloads/id_rsa \
     opa_security_manager.py \
     user1@192.144.13.138:~/ad-opa-demo/superset-custom/opa_security_manager.py
 ```
+# Шаг 4 Готовимся развернуть BI Superset
+Скачайте оба (~/Downloads/Dockerfile и ~/Downloads/superset_config.py) и закиньте в ту же папку, куда уже уехал opa_security_manager.py:
+```bash
+scp -i /Users/dmitry/Downloads/id_rsa \
+    ~/Downloads/Dockerfile ~/Downloads/superset_config.py \
+    user1@192.144.13.138:~/ad-opa-demo/superset-custom/
+```
+### Дальше на ВМ, по порядку:
+
+1. Метаданные-БД Superset в Postgres (отдельная от salesdb — там только тенантские данные):
