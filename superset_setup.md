@@ -29,5 +29,8 @@ docker exec -i demo-postgres psql -U tenant_company_b_role -d salesdb -h localho
 ```
 _**Комментарий**_
 (Пароли попросит psql, если он не подхватит PGPASSWORD — можно добавить -e PGPASSWORD=... перед psql в docker exec, или добавить временно в pg_hba.conf доверие для localhost, если он уже так настроен для postgres.)
+Вывод должен показать, что обе роли видят только свой tenant_id, двигаемся к authz.rego.
 
-Пришлите вывод — если обе роли видят только свой tenant_id, двигаемся к authz.rego.
+Далее, Прежде чем патчить authz.rego под bi_dashboard — необходимо проверить актуальный cat ~/ad-opa-demo/opa-policies/authz.rego. 
+В плане есть запись про запланированное добавление rbac_allow_service (байпас same_tenant для сервисных ролей типа metadata_ingestion), но не уверен, реализовано ли это уже на файле, или всё ещё в планах — а патч под Superset должен лечь поверх реального текущего состояния, а не той копии, что мне присылали раньше.
+
