@@ -257,4 +257,201 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/login/
 ```bash
 docker exec demo-ldap slappasswd -s '8YFmca1rSSy0xmOpo3JnFnSr'
 ```
-3. 
+Скопируйте хэш из вывода (начинается с {SSHA}...), подставьте в LDIF:
+```bash
+cat > /tmp/superset-admin.ldif << 'EOF'
+dn: uid=superset-admin,ou=people,dc=demo,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: superset-admin
+sn: BiAdmin
+cn: Superset Admin
+uidNumber: 20000
+gidNumber: 20000
+homeDirectory: /home/superset-admin
+userPassword: <ВСТАВЬТЕ_ХЭШ_ИЗ_ВЫВОДА_ВЫШЕ>
+
+dn: cn=Platform-BiAdmin,ou=groups,dc=demo,dc=local
+objectClass: groupOfNames
+cn: Platform-BiAdmin
+member: uid=superset-admin,ou=people,dc=demo,dc=local
+EOF
+
+docker cp /tmp/superset-admin.ldif demo-ldap:/tmp/superset-admin.ldif
+docker exec demo-ldap ldapadd -c -x -D "cn=admin,dc=demo,dc=local" -w AdminPass123! -H ldap://localhost:389 -f /tmp/superset-admin.ldif
+```
+2. Добавить роль bi_admin в authz.rego — обходит same_tenant, как metadata_ingestion, но именно под bi_dashboard:
+
+```bash
+cat > ~/ad-opa-demo/opa-policies/authz.rego << 'EOF'
+package platform.authz
+
+import future.keywords.in
+
+default allow = false
+
+role_permissions := {
+    "admin":   {
+        "sales_data": {"read", "write"},
+        "database": {"grant_direct_db_access"},
+        "audit_log": {"view_audit_log"},
+        "airflow_dag": {"airflow_dag_view", "airflow_dag_trigger", "airflow_dag_delete"},
+        "airflow_variable": {"airflow_variable_view", "airflow_variable_trigger"},
+        "s3_bucket": {"s3_access"},
+        "bi_dashboard": {"bi_view"},
+    },
+    "analyst": {
+        "sales_data": {"read"},
+        "database": {"grant_direct_db_access"},
+        "audit_log": set(),
+        "airflow_dag": {"airflow_dag_view"},
+        "airflow_variable": {"airflow_variable_view"},
+        "s3_bucket": {"s3_access"},
+        "bi_dashboard": {"bi_view"},
+    },
+    "viewer":  {
+        "sales_data": set(),
+        "database": set(),
+        "audit_log": set(),
+        "airflow_dag": set(),
+        "airflow_variable": set(),
+        "s3_bucket": set(),
+        "bi_dashboard": set(),
+    },
+    # Сервисная роль для ingestion-агентов (OpenMetadata и т.п.).
+    # Только чтение airflow-метаданных, без записи/триггеров/удаления
+    # и без доступа к данным других ресурсов.
+    "metadata_ingestion": {
+        "sales_data": set(),
+        "database": set(),
+        "audit_log": set(),
+        "airflow_dag": {"airflow_dag_view"},
+        "airflow_variable": {"airflow_variable_view"},
+        "s3_bucket": set(),
+        "bi_dashboard": set(),
+    },
+    # Сервисная роль для платформенной настройки Superset (заведение
+    # Database-подключений, датасетов, дашбордов на этапе настройки
+    # стенда) — нужен обзор bi_dashboard по ОБОИМ тенантам сразу,
+    # остального не касается.
+    "bi_admin": {
+        "sales_data": set(),
+        "database": set(),
+        "audit_log": set(),
+        "airflow_dag": set(),
+        "airflow_variable": set(),
+        "s3_bucket": set(),
+        "bi_dashboard": {"bi_view"},
+    },
+}
+
+# Роли, для которых tenant-изоляция намеренно не применяется —
+# это служебные технические аккаунты, а не пользователи компаний.
+service_roles := {"metadata_ingestion", "bi_admin"}
+
+rbac_allow {
+    some role in input.user.roles
+    input.action in role_permissions[role][input.resource.type]
+}
+
+rbac_allow_service {
+    some role in input.user.roles
+    role in service_roles
+    input.action in role_permissions[role][input.resource.type]
+}
+
+same_tenant {
+    input.user.tenant_id == input.resource.tenant_id
+}
+
+allow {
+    rbac_allow
+    same_tenant
+}
+
+# Сервисные роли обходят same_tenant — им по определению нужен
+# обзор по всем тенантам сразу (см. документ по OpenMetadata ingestion).
+allow {
+    rbac_allow_service
+}
+
+# Явные причины отказа — показываем их разработчикам на демо,
+# чтобы было видно, ПОЧЕМУ именно запрещено
+deny_reason["cross_tenant_access"] {
+    not same_tenant
+    not rbac_allow_service
+}
+
+deny_reason["role_not_permitted"] {
+    same_tenant
+    not rbac_allow
+}
+EOF
+
+docker logs demo-opa --tail 5
+```
+3. Добавить "BiAdmin": "bi_admin" в ROLE_MAP внутри opa_security_manager.py — этот файл уже на ВМ, правим прямо там (без пересборки образа, если он смонтирован; если нет — перескачиваю и пересобираю, скажите какой вариант у вас):
+
+Файл opa_security_manager.py копируется в образ через COPY в Dockerfile (не volume-mount, как у Airflow с webserver_config.py) — значит, правим исходник на ВМ и пересобираем образ:
+
+```bash
+sed -i 's/ROLE_MAP = {"Analysts": "analyst", "Admins": "admin", "Viewers": "viewer"}/ROLE_MAP = {"Analysts": "analyst", "Admins": "admin", "Viewers": "viewer", "BiAdmin": "bi_admin"}/' \
+  ~/ad-opa-demo/superset-custom/opa_security_manager.py
+
+grep ROLE_MAP ~/ad-opa-demo/superset-custom/opa_security_manager.py
+```
+
+Проверьте, что строка заменилась правильно (grep должен показать уже с "BiAdmin": "bi_admin"), и пересоберите/перезапустите:
+```bash
+docker compose build superset
+docker compose up -d superset
+docker logs demo-superset --tail 30
+```
+4. Залогиниться первым разом — откройте http://192.144.13.138:8088/login/, войдите как superset-admin / 8YFmca1rSSy0xmOpo3JnFnSr. Это создаст FAB-пользователя (пока с ролью Gamma).
+
+5. Повысить его до Admin:
+```bash
+docker exec -it demo-superset superset shell
+```
+
+внутри
+```bash
+from flask import current_app
+sm = current_app.appbuilder.sm
+user = sm.find_user(username="superset-admin")
+admin_role = sm.find_role("Admin")
+user.roles = [admin_role]
+sm.update_user(user)
+exit()
+```
+### Соединения
+
+Перелогиньтесь в браузере под superset-admin (или просто обновите страницу, если сессия ещё жива) — теперь должны появиться пункты Settings → Database Connections, Data → Connect database и т.д.
+
+Дальше — заводите оба подключения, как договаривались:
+
+company_a_salesdb:
+
+postgresql+psycopg2://tenant_company_a_role:n8P4bfFbcNlFvqGeNsqHHTTC@postgres:5432/salesdb
+
+company_b_salesdb:
+
+postgresql+psycopg2://tenant_company_b_role:MwBYElSYMSt2hLnXWcpLnHA2@postgres:5432/salesdb
+
+Test Connection на каждом → Connect. Пришлите, как пройдёт (или скриншот, если что-то не так) — и переходим к датасетам/дашбордам.
+
+**ВАЖНО**
+Кликайте PostgreSQL — откроется форма с полем _SQLAlchemy URI_ (или отдельными Host/Port/Database/User/Password — в Superset 3.1 обычно есть переключатель между «Basic»/«Connection String»). Проще всего через строку подключения целиком:
+
+Или
+Заметил — в поле DATABASE NAME сейчас company_a_salesdb, это неправильно: реальное имя базы в Postgres — salesdb (то же самое, куда льют DAG-и), просто у подключения будет говорящее отображаемое имя. Исправьте поля так:
+```
+HOST: postgres
+PORT: 5432
+DATABASE NAME: salesdb ← исправить (было company_a_salesdb)
+USERNAME: tenant_company_a_role
+PASSWORD: n8P4bfFbcNlFvqGeNsqHHTTC
+DISPLAY NAME: company_a_salesdb ← вот сюда идёт то, что вы по ошибке вписали в Database Name (сейчас там PostgreSQL)
+```
+Затем CONNECT (тут отдельной кнопки Test Connection может не быть на этом шаге — если подключение не пройдёт, форма покажет ошибку сразу при CONNECT).
