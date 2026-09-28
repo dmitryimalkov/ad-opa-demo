@@ -44,11 +44,24 @@ role_permissions := {
         "s3_bucket": set(),
         "bi_dashboard": set(),
     },
+    # Сервисная роль для платформенной настройки Superset (заведение
+    # Database-подключений, датасетов, дашбордов на этапе настройки
+    # стенда) — нужен обзор bi_dashboard по ОБОИМ тенантам сразу,
+    # остального не касается.
+    "bi_admin": {
+        "sales_data": set(),
+        "database": set(),
+        "audit_log": set(),
+        "airflow_dag": set(),
+        "airflow_variable": set(),
+        "s3_bucket": set(),
+        "bi_dashboard": {"bi_view"},
+    },
 }
 
 # Роли, для которых tenant-изоляция намеренно не применяется —
 # это служебные технические аккаунты, а не пользователи компаний.
-service_roles := {"metadata_ingestion"}
+service_roles := {"metadata_ingestion", "bi_admin"}
 
 rbac_allow {
     some role in input.user.roles
