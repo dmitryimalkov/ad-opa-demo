@@ -301,3 +301,30 @@ services:
       OPA_URL: "http://opa:8181/v1/data/platform/authz"
     networks:
       - demo-net
+  
+  # Superset — BI-дашборды. Логин напрямую через LDAP (та же нативная
+  # схема, что у Airflow/Postgres/ClickHouse/MinIO). Авторизация на
+  # дашборды/датасеты — через кастомный OpaSupersetSecurityManager,
+  # который на каждое обращение спрашивает OPA (тот же принцип, что
+  # OpaFabAuthManager у Airflow).
+  superset:
+    build: ./superset-custom
+    container_name: demo-superset
+    command: >
+      bash -c "superset db upgrade &&
+               superset init &&
+               gunicorn --bind 0.0.0.0:8088 --workers 2 --timeout 120 'superset.app:create_app()'"
+    environment:
+      OPA_URL: "http://opa:8181/v1/data/platform/authz"
+      LDAP_URI: "ldap://ldap:389"
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ldap:
+        condition: service_started
+      opa:
+        condition: service_started
+    networks:
+      - demo-net
