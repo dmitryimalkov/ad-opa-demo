@@ -1,6 +1,15 @@
 # Оценка свободных ресурсов на виртуальной машине (Linux)
 
 Ниже приведены основные команды для анализа ресурсов на Linux‑ВМ.
+echo "== $(hostname)"; . /etc/os-release; echo "OS: $PRETTY_NAME"; \
+echo "CPU: $(nproc) vCPU, $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"; \
+echo "AVX: $(grep -o -w -E 'avx2|avx512f' /proc/cpuinfo | sort -u | tr '\n' ' ')"; \
+free -h | awk '/Mem/{print "RAM: "$2" всего, "$7" доступно"}'; \
+df -h / /var 2>/dev/null | awk 'NR>1{print "Диск "$6": "$2" всего, "$4" свободно"}'; \
+lspci 2>/dev/null | grep -i -E 'nvidia|vga|3d' ; nvidia-smi -L 2>/dev/null; \
+echo "Docker: $(docker --version 2>/dev/null || echo нет)"; \
+echo "Занятые порты:"; ss -ltn | awk 'NR>1{print $4}' | grep -E ':(8000|8080|8081|5432|11434)$' || echo "  8000/8080/8081/5432 свободны"; \
+echo "Интернет: Docker Hub $(curl -s -o /dev/null -w '%{http_code}' https://registry-1.docker.io/v2/ || echo нет), PyPI $(curl -s -o /dev/null -w '%{http_code}' https://pypi.org/simple/ || echo нет)"
 
 ## Оперативная память
 
