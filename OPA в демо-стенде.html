@@ -1,0 +1,359 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>OPA в демо-стенде</title>
+<style>
+/* layout: fixed left nav (desktop) + scrolling content; nav collapses to top bar on phone */
+:root{
+  --bg:#f7f5f1; --surface:#ffffff; --surface-2:#f0ede7; --border:#ddd7cc;
+  --fg:#1d1a15; --fg-muted:#6b6355; --accent:#a8622f; --accent-fg:#ffffff;
+  --code-bg:#2b2620; --code-fg:#eae5da; --code-muted:#9c9484;
+  --good:#3f7d4f; --bad:#b4432f; --live:#2f6f8f; --offline:#8a6d1f;
+  --font-display:'Fraunces',Georgia,'Times New Roman',serif;
+  --font-body:'IBM Plex Sans',-apple-system,Segoe UI,sans-serif;
+  --font-mono:'IBM Plex Mono','SF Mono',Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15130f; --surface:#1d1a15; --surface-2:#242019; --border:#38332a;
+    --fg:#eae5da; --fg-muted:#a39a89; --accent:#e08a4f; --accent-fg:#1d1a15;
+    --code-bg:#0f0d0a; --code-fg:#e4dfd3; --code-muted:#746b5c;
+    --good:#6fbf80; --bad:#e2715c; --live:#6fb3d6; --offline:#d6ad4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15130f; --surface:#1d1a15; --surface-2:#242019; --border:#38332a;
+  --fg:#eae5da; --fg-muted:#a39a89; --accent:#e08a4f; --accent-fg:#1d1a15;
+  --code-bg:#0f0d0a; --code-fg:#e4dfd3; --code-muted:#746b5c;
+  --good:#6fbf80; --bad:#e2715c; --live:#6fb3d6; --offline:#d6ad4f;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);margin:0;line-height:1.55}
+a{color:var(--accent)}
+.wrap{display:flex;max-width:1180px;margin:0 auto}
+nav.side{
+  width:230px;flex:none;position:sticky;top:env(safe-area-inset-top,0px);
+  align-self:flex-start;height:100vh;overflow-y:auto;padding:28px 18px 28px 24px;
+  border-right:1px solid var(--border);
+}
+nav.side .brand{font-family:var(--font-display);font-size:1.05rem;font-weight:600;margin-bottom:4px}
+nav.side .brand small{display:block;font-family:var(--font-mono);font-size:.68rem;color:var(--fg-muted);font-weight:400;margin-top:2px}
+nav.side ul{list-style:none;margin:22px 0 0;padding:0;font-size:.86rem}
+nav.side li{margin-bottom:2px}
+nav.side a{display:block;padding:7px 10px;border-radius:6px;color:var(--fg-muted);text-decoration:none;transition:background .15s,color .15s}
+nav.side a:hover{background:var(--surface-2);color:var(--fg)}
+nav.side a.active{background:var(--surface-2);color:var(--accent);font-weight:600}
+nav.side .group-label{font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--fg-muted);margin:16px 10px 6px}
+
+main{flex:1;min-width:0;padding:40px clamp(18px,4vw,56px) 100px}
+header.hero{margin-bottom:46px}
+header.hero h1{font-family:var(--font-display);font-size:clamp(1.9rem,4vw,2.6rem);margin:0 0 10px;text-wrap:balance}
+header.hero p{color:var(--fg-muted);font-size:1.02rem;max-width:62ch;margin:0}
+
+section{margin-bottom:64px;scroll-margin-top:20px}
+section h2{font-family:var(--font-display);font-size:1.5rem;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+section .kicker{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-muted);margin:0 0 8px}
+section > p.lead{color:var(--fg-muted);max-width:68ch;margin:0 0 22px}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:.68rem;font-weight:600;padding:3px 9px;border-radius:99px;letter-spacing:.02em}
+.badge.live{background:color-mix(in srgb, var(--live) 18%, transparent);color:var(--live)}
+.badge.offline{background:color-mix(in srgb, var(--offline) 18%, transparent);color:var(--offline)}
+.badge.trivial{background:color-mix(in srgb, var(--fg-muted) 18%, transparent);color:var(--fg-muted)}
+.badge.real{background:color-mix(in srgb, var(--good) 18%, transparent);color:var(--good)}
+
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--border);border-radius:14px;overflow:hidden;margin:22px 0}
+.flow .step{background:var(--surface);padding:18px 18px 20px;position:relative;min-width:0}
+.flow .step + .step{border-left:1px solid var(--border)}
+.flow .step .num{font-family:var(--font-mono);font-size:.68rem;color:var(--accent);font-weight:700;margin-bottom:6px}
+.flow .step h4{margin:0 0 8px;font-size:.92rem}
+.flow .step p{margin:0;font-size:.84rem;color:var(--fg-muted)}
+.flow .step code{font-size:.78rem}
+@media (max-width:760px){.flow{grid-template-columns:1fr}.flow .step + .step{border-left:none;border-top:1px solid var(--border)}}
+
+pre{background:var(--code-bg);color:var(--code-fg);border-radius:10px;padding:16px 18px;overflow-x:auto;font-family:var(--font-mono);font-size:.8rem;line-height:1.6;margin:14px 0}
+pre .c{color:var(--code-muted)}
+code.inline{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-family:var(--font-mono);font-size:.85em}
+
+.file-tag{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:.78rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;margin:0 0 16px}
+.file-tag svg{flex:none}
+
+.callout{border-left:3px solid var(--accent);background:var(--surface-2);border-radius:0 10px 10px 0;padding:14px 18px;font-size:.88rem;color:var(--fg);margin:18px 0}
+.callout.warn{border-left-color:var(--offline)}
+.callout strong{color:var(--accent)}
+.callout.warn strong{color:var(--offline)}
+
+table.summary{width:100%;border-collapse:collapse;font-size:.84rem;margin-top:10px}
+table.summary th,table.summary td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+table.summary th{font-family:var(--font-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--fg-muted);font-weight:600}
+table.summary tr:last-child td{border-bottom:none}
+table.summary td code{font-size:.78rem}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+.tbl-wrap table{margin:0}
+.tbl-wrap th:first-child,.tbl-wrap td:first-child{padding-left:16px}
+
+.engine-box{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+.engine-box .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.engine-box .card h4{margin:0 0 8px;font-size:.88rem;font-family:var(--font-mono)}
+.engine-box .card p{margin:0;font-size:.84rem;color:var(--fg-muted)}
+@media (max-width:640px){.engine-box{grid-template-columns:1fr}}
+
+footer{color:var(--fg-muted);font-size:.78rem;padding:20px clamp(18px,4vw,56px) 60px;border-top:1px solid var(--border);margin-top:20px}
+
+/* mobile: hide sidebar, show top bar */
+.topbar{display:none}
+@media (max-width:900px){
+  nav.side{display:none}
+  .topbar{
+    display:flex;gap:8px;overflow-x:auto;padding:12px 16px;
+    border-bottom:1px solid var(--border);position:sticky;top:env(safe-area-inset-top,0px);
+    background:var(--bg);z-index:5;-webkit-overflow-scrolling:touch;
+  }
+  .topbar a{flex:none;font-family:var(--font-mono);font-size:.74rem;color:var(--fg-muted);text-decoration:none;background:var(--surface-2);border:1px solid var(--border);padding:6px 11px;border-radius:99px;white-space:nowrap}
+  .topbar a.active{color:var(--accent);border-color:var(--accent)}
+  main{padding-top:24px}
+}
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<div class="topbar" id="topbar"></div>
+
+<div class="wrap">
+  <nav class="side" id="sidenav">
+    <div class="brand">OPA в демо-стенде<small>authz.rego · справочник</small></div>
+    <ul id="navlist"></ul>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <h1>Как OPA устроена в демо-стенде</h1>
+      <p>OPA — это движок сравнения двух бирок: tenant_id пользователя и tenant_id ресурса. Он не хранит данные, не проксирует запросы и не говорит ни с одной из систем напрямую. Всё, что он делает, — отвечает «да» или «нет» на один HTTP-запрос. Этот справочник показывает, кто и как его об этом спрашивает в каждой из пяти точек интеграции.</p>
+    </header>
+
+    <section id="engine">
+      <p class="kicker">Движок</p>
+      <h2>authz.rego — один файл политики на всех</h2>
+      <p class="lead">OPA — универсальный исполнитель правил; <code class="inline">authz.rego</code> — это ваши конкретные правила. Он не знает, что такое Airflow или Superset — видит только JSON <code class="inline">{user, action, resource}</code> и сравнивает поля.</p>
+
+      <div class="engine-box">
+        <div class="card">
+          <h4>rbac_allow</h4>
+          <p>Есть ли у роли пользователя разрешение на это действие в <code class="inline">role_permissions</code>. Проверка «по роли», не по тенанту.</p>
+        </div>
+        <div class="card">
+          <h4>same_tenant</h4>
+          <p><code class="inline">input.user.tenant_id == input.resource.tenant_id</code>. Тривиальное сравнение строк — не знает, откуда они взялись.</p>
+        </div>
+      </div>
+
+      <pre><span class="c">// authz.rego — упрощённо</span>
+rbac_allow {
+    some role in input.user.roles
+    input.action in role_permissions[role][input.resource.type]
+}
+
+same_tenant {
+    input.user.tenant_id == input.resource.tenant_id
+}
+
+allow { rbac_allow; same_tenant }
+
+<span class="c">// сервисные роли (metadata_ingestion, bi_admin) обходят same_tenant —</span>
+<span class="c">// им по определению нужен обзор по обоим тенантам сразу</span>
+allow { rbac_allow_service }</pre>
+
+      <div class="callout">
+        <strong>Ключевой момент:</strong> содержательная разница между пятью случаями ниже — не в <code class="inline">authz.rego</code>, а в том, что именно каждый вызывающий код подставляет в <code class="inline">resource.tenant_id</code> перед отправкой запроса.
+      </div>
+    </section>
+
+    <section id="postgres">
+      <p class="kicker">Точка интеграции № 1</p>
+      <h2>Postgres — через Gateway <span class="badge live">live, на каждый запрос</span> <span class="badge trivial">проверка тривиальна</span></h2>
+      <div class="file-tag">demo-api/main.py</div>
+      <p class="lead"><code class="inline">resource.tenant_id = user["tenant_id"]</code> — ресурс помечен тем же тенантом, что и сам пользователь. <code class="inline">same_tenant</code> тут всегда true. Реальная защита строк — Postgres RLS, OPA лишь проверяет право роли на действие.</p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">01</div>
+          <h4>Браузер → main.py</h4>
+          <p>Запрос <code class="inline">GET /sales</code>. Gateway игнорирует любой tenant_id из параметров — берёт его только из JWT.</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h4>main.py → OPA</h4>
+          <p><code class="inline">check_opa(user, "read", {"type":"sales_data", "tenant_id": user.tenant_id})</code></p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h4>main.py → Postgres</h4>
+          <p>Если allow — Gateway сам выполняет <code class="inline">SET app.tenant_id</code> и SQL-запрос через своё psycopg2-подключение. RLS фильтрует строки.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="airflow">
+      <p class="kicker">Точка интеграции № 2</p>
+      <h2>Airflow — DAG'и <span class="badge live">live, на каждый запрос</span> <span class="badge real">настоящая проверка</span></h2>
+      <div class="file-tag">airflow-custom/opa_auth_manager.py <span style="color:var(--fg-muted);font-weight:400">· класс OpaFabAuthManager, встроен в процесс Airflow</span></div>
+      <p class="lead"><code class="inline">resource.tenant_id = _dag_tenant(dag_id)</code> — парсится из префикса <code class="inline">&lt;tenant_id&gt;__</code> в имени самого DAG'а, независимо от того, кто спрашивает. Здесь <code class="inline">same_tenant</code> действительно что-то решает.</p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">01</div>
+          <h4>Клик «открыть DAG»</h4>
+          <p>Airflow webserver сам вызывает свой метод <code class="inline">is_authorized_dag()</code>.</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h4>OpaFabAuthManager → OPA</h4>
+          <p>tenant_id ресурса — из имени DAG'а (<code class="inline">company_a__load_dataset</code> → <code class="inline">company_a</code>), не из юзера.</p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h4>Обратно в Airflow</h4>
+          <p>Если allow — управление возвращается в сам Airflow, он рендерит DAG как обычно, из своей метаданных-БД.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="superset">
+      <p class="kicker">Точка интеграции № 3</p>
+      <h2>Superset — дашборды <span class="badge live">live, на каждый запрос</span> <span class="badge real">настоящая проверка</span></h2>
+      <div class="file-tag">superset-custom/opa_security_manager.py <span style="color:var(--fg-muted);font-weight:400">· класс OpaSupersetSecurityManager, встроен в процесс Superset</span></div>
+      <p class="lead"><code class="inline">resource.tenant_id = _tenant_from_name(name)</code> — префикс из названия дашборда/датасета. Для датасетов есть запасной путь: если префикса в имени нет (UI не даёт переименовать физический датасет), тенант берётся из названия Database-подключения через <code class="inline">DB_NAME_TENANT_MAP</code>.</p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">01</div>
+          <h4>Открытие дашборда</h4>
+          <p>Superset сам вызывает <code class="inline">can_access_dashboard()</code> / <code class="inline">raise_for_access()</code>.</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h4>OpaSupersetSecurityManager → OPA</h4>
+          <p>Сравнивает tenant_id из имени дашборда с tenant_id пользователя (из LDAP-группы).</p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h4>Обратно в Superset</h4>
+          <p>Если allow — Superset выполняет SQL через своё Database-подключение (под tenant-scoped ролью Postgres) и рисует график.</p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Известное ограничение:</strong> списки <em>Charts</em> (и отчасти <em>Dashboards</em>) не фильтруются этой проверкой на уровне списка — названия обоих тенантов видны всем. Реальные данные при открытии всё равно блокируются OPA — утекают только заголовки.
+      </div>
+    </section>
+
+    <section id="minio">
+      <p class="kicker">Точка интеграции № 4</p>
+      <h2>MinIO — объекты в бакете <span class="badge offline">офлайн, заранее</span> <span class="badge trivial">проверка тривиальна</span></h2>
+      <div class="file-tag">minio-sync/sync_minio_policies.py <span style="color:var(--fg-muted);font-weight:400">· отдельный скрипт, не часть MinIO</span></div>
+      <p class="lead">Единственный случай, где OPA не стоит на пути реального запроса. Скрипт заранее приводит IAM-политики MinIO в соответствие с ответами OPA; в момент самого обращения к файлам OPA уже не участвует.</p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">01</div>
+          <h4>Заранее: sync → OPA</h4>
+          <p>Для каждой LDAP-группы: <code class="inline">resource.tenant_id = tenant_id</code> (= tenant_id юзера, тривиально).</p>
+        </div>
+        <div class="step">
+          <div class="num">02</div>
+          <h4>sync → MinIO (API)</h4>
+          <p>Если allow — скрипт сам вызывает <code class="inline">mc idp ldap policy attach/detach</code>, меняя конфигурацию MinIO.</p>
+        </div>
+        <div class="step">
+          <div class="num">03</div>
+          <h4>Позже: DAG → MinIO напрямую</h4>
+          <p><code class="inline">AssumeRoleWithLDAPIdentity</code> + <code class="inline">GetObject</code>. MinIO проверяет свою же, заранее привязанную политику. OPA не спрашивается.</p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Следствие:</strong> если поменять <code class="inline">authz.rego</code> и не перезапустить <code class="inline">docker compose run --rm minio-sync</code> — MinIO продолжит жить по старым правилам сколько угодно долго.
+      </div>
+    </section>
+
+    <section id="clickhouse">
+      <p class="kicker">Точка интеграции № 5 — другая роль</p>
+      <h2>ClickHouse — журнал решений, не защищаемый ресурс</h2>
+      <div class="file-tag">clickhouse-init/01-audit-log.sql · 02-request-log.sql</div>
+      <p class="lead">ClickHouse не хранит бизнес-данные, которые нужно делить по тенантам. Это общий приёмник: все четыре источника выше пишут сюда результат своего обращения к OPA — <em>после</em> того, как получили ответ, а не вместо запроса к OPA.</p>
+
+      <div class="tbl-wrap">
+        <table class="summary">
+          <thead><tr><th>Таблица</th><th>Что в ней</th><th>Кто пишет</th></tr></thead>
+          <tbody>
+            <tr><td><code class="inline">audit.audit_log</code></td><td>Каждое решение OPA: user, action, resource, allow, deny_reason</td><td>main.py, opa_auth_manager.py, opa_security_manager.py, sync_minio_policies.py</td></tr>
+            <tr><td><code class="inline">audit.request_log</code></td><td>Сырой HTTP-лог Gateway — включая запросы, которые до OPA не дошли (напр. 401 по JWT)</td><td>demo-api/main.py</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warn">
+        <strong>Не подтверждено:</strong> в <code class="inline">authz.rego</code> есть право <code class="inline">"audit_log": {"view_audit_log"}</code> (только у <code class="inline">admin</code>) — то есть чтение журнала задумано как ещё одно действие, требующее проверки OPA. Но код, который бы реально делал этот запрос при чтении ClickHouse, пока не найден среди присланных файлов — либо не реализован, либо не был показан.
+      </div>
+    </section>
+
+    <section id="summary">
+      <p class="kicker">Итог</p>
+      <h2>Все пять точек рядом</h2>
+      <div class="tbl-wrap">
+        <table class="summary">
+          <thead><tr><th>Система</th><th>Кто спрашивает OPA</th><th>resource.tenant_id откуда</th><th>Когда</th><th>same_tenant реальна?</th></tr></thead>
+          <tbody>
+            <tr><td>Postgres (API)</td><td><code class="inline">main.py</code></td><td>из самого пользователя</td><td>на каждый запрос</td><td>нет — защита в RLS</td></tr>
+            <tr><td>Airflow</td><td><code class="inline">opa_auth_manager.py</code></td><td>из префикса в имени DAG'а</td><td>на каждый запрос</td><td>да</td></tr>
+            <tr><td>Superset</td><td><code class="inline">opa_security_manager.py</code></td><td>из префикса имени / Database-подключения</td><td>на каждый запрос</td><td>да</td></tr>
+            <tr><td>MinIO</td><td><code class="inline">sync_minio_policies.py</code></td><td>из самого пользователя</td><td>заранее, офлайн</td><td>нет — защита в IAM-политике MinIO</td></tr>
+            <tr><td>ClickHouse</td><td>не найден (только запись в журнал)</td><td>—</td><td>—</td><td>не подтверждено</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+  try{
+    var sections = Array.from(document.querySelectorAll('main section[id]'));
+    var navlist = document.getElementById('navlist');
+    var topbar = document.getElementById('topbar');
+    sections.forEach(function(s){
+      var h = s.querySelector('h2');
+      if(!h) return;
+      var label = h.textContent.split('—')[0].trim();
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#'+s.id; a.textContent = label; a.dataset.target = s.id;
+      li.appendChild(a); navlist.appendChild(li);
+
+      var ta = document.createElement('a');
+      ta.href = '#'+s.id; ta.textContent = label; ta.dataset.target = s.id;
+      topbar.appendChild(ta);
+    });
+
+    var allLinks = document.querySelectorAll('nav.side a, .topbar a');
+    function setActive(id){
+      allLinks.forEach(function(a){
+        a.classList.toggle('active', a.dataset.target === id);
+      });
+    }
+    if('IntersectionObserver' in window){
+      var obs = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){
+          if(e.isIntersecting) setActive(e.target.id);
+        });
+      }, {rootMargin:'-20% 0px -70% 0px'});
+      sections.forEach(function(s){ obs.observe(s); });
+    }
+    if(sections[0]) setActive(sections[0].id);
+  }catch(e){}
+})();
+</script>
+
+<footer>Справочник по демо-стенду — AD/LDAP · Keycloak · OPA · Postgres · ClickHouse · Airflow · Superset · MinIO</footer>
+
+</body></html>
